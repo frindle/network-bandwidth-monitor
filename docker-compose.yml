@@ -7,30 +7,18 @@ services:
       - NET_ADMIN
       - NET_RAW
     volumes:
-      # Mounts host PID-1's network namespace so we see Unraid's interfaces/conntrack
       - /proc/1/net:/host/net:ro
-      # Persistent SQLite database
       - netmon_data:/data
     environment:
       - DB_PATH=/data/netmon.db
       - NET_BASE=/host/net
     networks:
-      netmon_macvlan:
+      br0:
         ipv4_address: 10.0.9.47
 
 networks:
-  netmon_macvlan:
-    driver: macvlan
-    driver_opts:
-      # bond0 is the physical bonded NIC underlying br0.
-      # macvlan on a bridge (br0) can fail with "device busy" on some kernels;
-      # using the physical interface directly avoids that.
-      parent: bond0
-    ipam:
-      driver: default
-      config:
-        - subnet: 10.0.0.0/20
-          ip_range: 10.0.9.47/32
+  br0:
+    external: true
 
 volumes:
   netmon_data:
