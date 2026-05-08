@@ -29,7 +29,9 @@ networks:
       driver: default
       config:
         - subnet: 10.0.0.0/20
-          # Set this to your actual network gateway
+          # ip_range limits Docker's IPAM ownership to just this IP, avoiding the
+          # "pool overlaps" error caused by br0 already occupying 10.0.0.0/20
+          ip_range: 10.0.9.47/32
           gateway: 10.0.0.1
 
 volumes:
