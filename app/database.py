@@ -110,13 +110,15 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_bw_raw_ts       ON bw_raw(ts);
             CREATE INDEX IF NOT EXISTS idx_bw_hourly_ts    ON bw_hourly(hour_ts);
             CREATE INDEX IF NOT EXISTS idx_conn_ht_ts      ON conn_hourly(hour_ts);
-            CREATE INDEX IF NOT EXISTS idx_conn_source     ON conn_hourly(source_ip);
             CREATE INDEX IF NOT EXISTS idx_cf_tunnel_ts    ON cf_tunnel_hourly(hour_ts);
             CREATE INDEX IF NOT EXISTS idx_fw_devices_ip   ON fw_devices(ip);
             CREATE INDEX IF NOT EXISTS idx_cbw_raw_ts      ON container_bw_raw(ts);
             CREATE INDEX IF NOT EXISTS idx_cbw_hourly_ts   ON container_bw_hourly(hour_ts);
         """)
     _migrate()
+    # idx_conn_source requires source_ip which may not exist until after _migrate runs
+    with _db() as conn:
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_conn_source ON conn_hourly(source_ip)")
 
 
 def _migrate():
