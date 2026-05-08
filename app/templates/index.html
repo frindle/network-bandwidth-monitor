@@ -18,6 +18,31 @@
     header{display:flex;align-items:center;justify-content:space-between;padding:12px 20px;border-bottom:1px solid var(--border);background:var(--surface);gap:12px;flex-wrap:wrap}
     header h1{font-size:16px;font-weight:600;display:flex;align-items:center;gap:8px}
     .ver{font-size:10px;background:var(--hover);color:var(--muted);padding:2px 6px;border-radius:10px}
+    .gear-btn{background:transparent;border:1px solid var(--border);border-radius:6px;color:var(--muted);padding:5px 8px;cursor:pointer;font-size:14px;line-height:1;transition:all .15s}
+    .gear-btn:hover{background:var(--hover);color:var(--text);border-color:var(--accent)}
+
+    /* settings modal */
+    .modal-backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:100;align-items:center;justify-content:center}
+    .modal-backdrop.open{display:flex}
+    .modal{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px;width:100%;max-width:460px;max-height:90vh;overflow-y:auto}
+    .modal h2{font-size:15px;font-weight:600;margin-bottom:18px;display:flex;align-items:center;gap:8px}
+    .modal-close{margin-left:auto;background:transparent;border:none;color:var(--muted);font-size:18px;cursor:pointer;line-height:1}
+    .modal-close:hover{color:var(--text)}
+    .field{margin-bottom:14px}
+    .field label{display:block;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);margin-bottom:5px}
+    .field input{width:100%;background:var(--hover);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;padding:7px 10px;outline:none;transition:border-color .15s}
+    .field input:focus{border-color:var(--accent)}
+    .field .hint{font-size:11px;color:var(--muted);margin-top:4px;line-height:1.4}
+    .modal-actions{display:flex;gap:8px;margin-top:18px;align-items:center;flex-wrap:wrap}
+    .btn{padding:7px 14px;border-radius:6px;font-size:13px;font-weight:500;cursor:pointer;border:none;transition:all .15s}
+    .btn-primary{background:var(--accent);color:#fff}
+    .btn-primary:hover{background:#4493e4}
+    .btn-secondary{background:var(--hover);color:var(--text);border:1px solid var(--border)}
+    .btn-secondary:hover{border-color:var(--accent)}
+    .test-result{font-size:12px;padding:4px 8px;border-radius:4px}
+    .test-ok{background:rgba(63,185,80,.15);color:var(--rx)}
+    .test-fail{background:rgba(248,81,73,.15);color:var(--tx)}
+    .section-divider{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin:18px 0 12px;padding-bottom:6px;border-bottom:1px solid var(--border)}
     #live-rates{display:flex;gap:14px;flex-wrap:wrap}
     .ri{display:flex;flex-direction:column;align-items:flex-end;gap:1px}
     .ri .rl{font-size:10px;color:var(--muted)}
@@ -113,7 +138,52 @@
 <header>
   <h1>Network Monitor <span class="ver" id="ver">v0.3.0</span></h1>
   <div id="live-rates"></div>
+  <button class="gear-btn" onclick="openSettings()" title="Settings">⚙</button>
 </header>
+
+<!-- settings modal -->
+<div class="modal-backdrop" id="settings-modal" onclick="if(event.target===this)closeSettings()">
+  <div class="modal">
+    <h2>⚙ Settings <button class="modal-close" onclick="closeSettings()">✕</button></h2>
+
+    <div class="section-divider">Firewalla Integration</div>
+    <div class="field">
+      <label>Firewalla IP</label>
+      <input type="text" id="fw-ip" placeholder="10.0.0.1" autocomplete="off">
+      <div class="hint">LAN IP of your Firewalla Gold Plus box</div>
+    </div>
+    <div class="field">
+      <label>API Token</label>
+      <input type="password" id="fw-token" placeholder="Leave blank to keep existing" autocomplete="off">
+      <div class="hint">
+        Get via SSH: <code style="background:var(--hover);padding:1px 4px;border-radius:3px;font-size:11px">ssh -p 8822 pi@&lt;ip&gt;</code>
+        then check Firewalla app → Me → Settings for Developer / API Access
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="testFw()" id="fw-test-btn">Test Connection</button>
+      <span class="test-result" id="fw-test-result" style="display:none"></span>
+    </div>
+
+    <div class="section-divider">Network</div>
+    <div class="field">
+      <label>Local Subnet</label>
+      <input type="text" id="s-subnet" placeholder="10.0.0.0/20" autocomplete="off">
+      <div class="hint">Used to distinguish local vs external traffic</div>
+    </div>
+    <div class="field">
+      <label>CF Tunnel Container Name</label>
+      <input type="text" id="s-cf-container" placeholder="CloudflareTunnel" autocomplete="off">
+      <div class="hint">Exact Docker container name for your cloudflared instance</div>
+    </div>
+
+    <div class="modal-actions" style="margin-top:22px;border-top:1px solid var(--border);padding-top:16px">
+      <button class="btn btn-primary" onclick="saveSettings()">Save</button>
+      <button class="btn btn-secondary" onclick="closeSettings()">Cancel</button>
+      <span class="test-result" id="save-result" style="display:none"></span>
+    </div>
+  </div>
+</div>
 
 <main>
   <div id="sbar"><div class="dot"></div><span id="stxt">Connecting…</span></div>
@@ -641,6 +711,58 @@ document.getElementById('view-btns').addEventListener('click',e=>{
 document.getElementById('range-btns').addEventListener('click',e=>{
   if(e.target.matches('button')) setRange(e.target.dataset.range);
 });
+
+/* ── settings modal ──────────────────────────────────────────────────────────── */
+async function openSettings(){
+  const data=await fetch(`${API}/api/settings`).then(r=>r.json());
+  document.getElementById('fw-ip').value         = data.firewalla_ip||'';
+  document.getElementById('fw-token').value      = '';  // never pre-fill token
+  document.getElementById('fw-token').placeholder= data.firewalla_token_set
+    ? 'Leave blank to keep existing token' : 'Paste token here';
+  document.getElementById('s-subnet').value      = data.local_subnet||'';
+  document.getElementById('s-cf-container').value= data.cf_tunnel_container||'';
+  document.getElementById('fw-test-result').style.display='none';
+  document.getElementById('save-result').style.display='none';
+  document.getElementById('settings-modal').classList.add('open');
+}
+
+function closeSettings(){
+  document.getElementById('settings-modal').classList.remove('open');
+}
+
+async function saveSettings(){
+  const body={
+    firewalla_ip:        document.getElementById('fw-ip').value.trim(),
+    firewalla_token:     document.getElementById('fw-token').value.trim(),
+    local_subnet:        document.getElementById('s-subnet').value.trim(),
+    cf_tunnel_container: document.getElementById('s-cf-container').value.trim(),
+  };
+  const res=await fetch(`${API}/api/settings`,{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const el=document.getElementById('save-result');
+  el.style.display='';
+  if(res.ok){ el.className='test-result test-ok'; el.textContent='Saved'; setTimeout(()=>el.style.display='none',2000); }
+  else       { el.className='test-result test-fail'; el.textContent='Save failed'; }
+}
+
+async function testFw(){
+  const btn=document.getElementById('fw-test-btn');
+  const el =document.getElementById('fw-test-result');
+  btn.disabled=true; btn.textContent='Testing…';
+  el.style.display='none';
+  // Save current field values first so the test uses them
+  await fetch(`${API}/api/settings`,{method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({
+      firewalla_ip:    document.getElementById('fw-ip').value.trim(),
+      firewalla_token: document.getElementById('fw-token').value.trim(),
+    })});
+  const res=await fetch(`${API}/api/settings/fw_test`).then(r=>r.json());
+  el.style.display='';
+  el.className='test-result '+(res.ok?'test-ok':'test-fail');
+  el.textContent=res.message;
+  btn.disabled=false; btn.textContent='Test Connection';
+}
 
 /* ── boot ────────────────────────────────────────────────────────────────────── */
 initChart();
