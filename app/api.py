@@ -6,9 +6,10 @@ import app.cloudflare as cloudflare
 import app.collector as collector
 import app.database as db
 import app.docker_stats as docker_stats
+import app.fw_collector as fw_collector
 import app.resolver as resolver
 
-VERSION = '0.3.0'
+VERSION = '0.4.0'
 
 app = Flask(__name__)
 
@@ -125,12 +126,15 @@ def devices():
     labels    = db.get_all_labels()
     result    = []
     for r in rows:
-        ip       = r['source_ip']
-        hostname = db.get_dns(ip) or ip
+        ip      = r['source_ip']
+        fw_info = db.get_fw_device_by_ip(ip)
         result.append({
             'ip':          ip,
-            'hostname':    hostname,
+            'hostname':    db.get_dns(ip) or ip,
             'label':       labels.get(ip),
+            'fw_name':     fw_info['name']       if fw_info else None,
+            'fw_mac':      fw_info['mac']        if fw_info else None,
+            'fw_vendor':   fw_info['mac_vendor'] if fw_info else None,
             'tx_bytes':    r['tx_bytes'],
             'rx_bytes':    r['rx_bytes'],
             'total_bytes': r['total_bytes'],
@@ -282,6 +286,31 @@ def fw_test():
     ok, msg = fw.test_connection()
     return jsonify({'ok': ok, 'message': msg})
 
+@app.route('/api/settings/fw_sync', methods=['POST'])
+def fw_sync():
+    import app.firewalla as fw
+    if not fw.available():
+        return jsonify({'ok': False, 'message': 'Firewalla IP not configured'})
+    fw_collector.poll_once()
+    count = len(db.get_all_fw_devices())
+    return jsonify({'ok': True, 'message': f'Synced — {count} devices in database'})
+
+@app.route('/api/fw_devices')
+def fw_devices_list():
+    rows   = db.get_all_fw_devices()
+    labels = db.get_all_labels()
+    result = []
+    for d in rows:
+        result.append({
+            'mac':        d['mac'],
+            'ip':         d['ip'],
+            'name':       d['name'],
+            'mac_vendor': d['mac_vendor'],
+            'label':      labels.get(d['ip']),
+            'last_active': d['last_active'],
+        })
+    return jsonify(result)
+
 
 # ── status ─────────────────────────────────────────────────────────────────────
 
@@ -296,6 +325,7 @@ def status():
 # ── startup ────────────────────────────────────────────────────────────────────
 
 collector.start()
+fw_collector.start()
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080, debug=False)

@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.4.0] - 2026-05-08
+
+### Added
+- Firewalla Gold Plus local API integration (port 8834, no auth required)
+- `/v1/host/all` polling every 5 min — device names, MACs, MAC vendors synced to `fw_devices` table
+- `fw_devices` SQLite table with automatic migration from v0.3 databases
+- `app/fw_collector.py` — background poller, also callable on-demand via "Sync Devices" button
+- `/api/fw_devices` endpoint listing all Firewalla-known devices
+- `/api/settings/fw_sync` POST endpoint for manual on-demand sync
+- Device display name priority: user label → Firewalla name → DNS hostname → IP
+- MAC address and vendor (e.g. "Apple, Inc") shown in Devices table subtitle row
+- "Sync Devices" button in Settings modal — pulls latest device list immediately
+- Firewalla token field is now optional (local API is unauthenticated)
+- `fw_name`, `fw_mac`, `fw_vendor` fields returned by `/api/devices`
+
+### Changed
+- `firewalla.py` port corrected 8833 → 8834
+- `firewalla.available()` no longer requires a token — only IP is needed
+- `get_devices()` correctly unwraps `{"hosts": [...]}` response envelope
+- Settings modal "Test Connection" saves IP before testing (no need to hit Save first)
+
 ## [0.3.0] - 2026-05-08
 
 ### Added

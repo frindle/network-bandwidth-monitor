@@ -106,6 +106,8 @@
     .b-cf{background:rgba(246,130,31,.15);color:var(--cf)}
     .b-cf::before{content:'☁ '}
     .b-tunnel{background:rgba(163,113,247,.15);color:var(--tunnel)}
+    .b-fw{background:rgba(88,166,255,.1);color:var(--accent);font-size:9px}
+    .fw-vendor{font-size:10px;color:var(--muted);font-style:italic}
 
     .bar-cell{display:flex;align-items:center;gap:6px}
     .bar-bg{flex:1;height:3px;background:var(--border);border-radius:2px;min-width:40px;max-width:90px}
@@ -136,7 +138,7 @@
 </head>
 <body>
 <header>
-  <h1>Network Monitor <span class="ver" id="ver">v0.3.0</span></h1>
+  <h1>Network Monitor <span class="ver" id="ver">v0.4.0</span></h1>
   <div id="live-rates"></div>
   <button class="gear-btn" onclick="openSettings()" title="Settings">⚙</button>
 </header>
@@ -162,6 +164,7 @@
     </div>
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="testFw()" id="fw-test-btn">Test Connection</button>
+      <button class="btn btn-secondary" onclick="syncFw()" id="fw-sync-btn">Sync Devices</button>
       <span class="test-result" id="fw-test-result" style="display:none"></span>
     </div>
 
@@ -564,7 +567,7 @@ function renderDevices(){
       if(!existing.has(d.ip)){
         const btn=document.createElement('button');
         btn.dataset.sub=d.ip;
-        btn.textContent=labels[d.ip]||d.hostname||d.ip;
+        btn.textContent=devDisplayName(d);
         btn.addEventListener('click',()=>setSub(d.ip));
         tabEl.appendChild(btn); existing.add(d.ip);
       }
@@ -574,13 +577,15 @@ function renderDevices(){
   if(!sorted.length){body.innerHTML='';empty.style.display='block';return}
   empty.style.display='none';
   body.innerHTML=sorted.map(d=>{
-    const disp=labels[d.ip]||d.hostname||d.ip;
+    const disp=devDisplayName(d);
     const isIP=disp===d.ip;
+    const sub2=d.fw_name&&!labels[d.ip]?`<span class="fw-vendor">via Firewalla</span>`:
+               d.fw_vendor?`<span class="fw-vendor">${d.fw_vendor}</span>`:'';
     const sel=d.ip===sub?'style="background:rgba(88,166,255,.06)"':'';
     return `<tr ${sel} onclick="setSub('${d.ip}')" style="cursor:pointer">
       <td><div class="hcell">
-        <span class="hn">${disp}${isIP?'':''} ${labelHtml(d.ip)}</span>
-        ${!isIP?`<span class="ips">${d.ip}</span>`:''}
+        <span class="hn">${disp} ${labelHtml(d.ip)}</span>
+        <span class="ips">${d.ip}${d.fw_mac?` · ${d.fw_mac}`:''}${sub2?' · ':''} ${sub2}</span>
       </div></td>
       <td class="bv">${fmtBytes(d.total_bytes)}</td>
       <td class="bv">${fmtBytes(d.tx_bytes)}</td>
@@ -588,6 +593,10 @@ function renderDevices(){
       <td style="color:var(--muted);font-size:12px">${new Date(d.last_seen*1000).toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}</td>
     </tr>`;
   }).join('');
+}
+
+function devDisplayName(d){
+  return labels[d.ip] || d.fw_name || (d.hostname!==d.ip?d.hostname:null) || d.ip;
 }
 
 /* ── CF tunnel ───────────────────────────────────────────────────────────────── */
@@ -750,7 +759,6 @@ async function testFw(){
   const el =document.getElementById('fw-test-result');
   btn.disabled=true; btn.textContent='Testing…';
   el.style.display='none';
-  // Save current field values first so the test uses them
   await fetch(`${API}/api/settings`,{method:'POST',
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify({
@@ -762,6 +770,23 @@ async function testFw(){
   el.className='test-result '+(res.ok?'test-ok':'test-fail');
   el.textContent=res.message;
   btn.disabled=false; btn.textContent='Test Connection';
+}
+
+async function syncFw(){
+  const btn=document.getElementById('fw-sync-btn');
+  const el =document.getElementById('fw-test-result');
+  btn.disabled=true; btn.textContent='Syncing…';
+  el.style.display='none';
+  // Save IP first in case it was just typed
+  await fetch(`${API}/api/settings`,{method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({firewalla_ip: document.getElementById('fw-ip').value.trim()})});
+  const res=await fetch(`${API}/api/settings/fw_sync`,{method:'POST'}).then(r=>r.json());
+  el.style.display='';
+  el.className='test-result '+(res.ok?'test-ok':'test-fail');
+  el.textContent=res.message;
+  btn.disabled=false; btn.textContent='Sync Devices';
+  if(res.ok) loadLabels().then(()=>refreshAll());
 }
 
 /* ── boot ────────────────────────────────────────────────────────────────────── */

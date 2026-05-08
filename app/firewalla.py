@@ -19,15 +19,16 @@ def _token() -> str: return _setting('firewalla_token')
 
 
 def available() -> bool:
-    return bool(_ip() and _token())
+    return bool(_ip())
 
 
 def _get(path: str):
-    conn = http.client.HTTPConnection(_ip(), 8833, timeout=8)
-    conn.request('GET', path, headers={
-        'Authorization': f'Token {_token()}',
-        'Accept': 'application/json',
-    })
+    conn = http.client.HTTPConnection(_ip(), 8834, timeout=8)
+    headers = {'Accept': 'application/json'}
+    tok = _token()
+    if tok:
+        headers['Authorization'] = f'Token {tok}'
+    conn.request('GET', path, headers=headers)
     resp = conn.getresponse()
     body = resp.read()
     conn.close()
@@ -39,26 +40,32 @@ def _get(path: str):
 def test_connection() -> tuple[bool, str]:
     if not _ip():
         return False, 'Firewalla IP not configured'
-    if not _token():
-        return False, 'Firewalla token not configured'
     try:
-        data = _get('/v1/box')
-        name = data.get('name') or data.get('boxName') or 'Firewalla'
-        return True, f'Connected to {name}'
+        data = _get('/v1/host/all')
+        hosts = data.get('hosts', []) if isinstance(data, dict) else data
+        return True, f'Connected — {len(hosts)} devices visible'
     except Exception as e:
         return False, str(e)
 
 
 def get_devices() -> list:
+    """Returns list of host dicts: {ip, mac, name, macVendor, lastActive, ...}"""
     try:
-        return _get('/v1/device') or []
+        data = _get('/v1/host/all')
+        if isinstance(data, dict):
+            return data.get('hosts', [])
+        return data or []
     except Exception:
         return []
 
 
 def get_flows(begin: int, end: int, count: int = 500) -> list:
+    """Returns list of flow dicts. begin/end are Unix timestamps."""
     try:
-        return _get(f'/v1/flow?begin={begin}&end={end}&count={count}') or []
+        data = _get(f'/v1/flow?begin={begin}&end={end}&count={count}')
+        if isinstance(data, dict):
+            return data.get('flows', data.get('result', []))
+        return data or []
     except Exception:
         return []
 

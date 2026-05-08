@@ -98,12 +98,21 @@ def init_db():
                 value      TEXT    NOT NULL,
                 updated_at INTEGER NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS fw_devices (
+                mac        TEXT    PRIMARY KEY,
+                ip         TEXT    NOT NULL DEFAULT '',
+                name       TEXT    NOT NULL DEFAULT '',
+                mac_vendor TEXT    NOT NULL DEFAULT '',
+                last_active INTEGER NOT NULL DEFAULT 0,
+                updated_at  INTEGER NOT NULL DEFAULT 0
+            );
 
             CREATE INDEX IF NOT EXISTS idx_bw_raw_ts       ON bw_raw(ts);
             CREATE INDEX IF NOT EXISTS idx_bw_hourly_ts    ON bw_hourly(hour_ts);
             CREATE INDEX IF NOT EXISTS idx_conn_ht_ts      ON conn_hourly(hour_ts);
             CREATE INDEX IF NOT EXISTS idx_conn_source     ON conn_hourly(source_ip);
             CREATE INDEX IF NOT EXISTS idx_cf_tunnel_ts    ON cf_tunnel_hourly(hour_ts);
+            CREATE INDEX IF NOT EXISTS idx_fw_devices_ip   ON fw_devices(ip);
             CREATE INDEX IF NOT EXISTS idx_cbw_raw_ts      ON container_bw_raw(ts);
             CREATE INDEX IF NOT EXISTS idx_cbw_hourly_ts   ON container_bw_hourly(hour_ts);
         """)
@@ -113,6 +122,21 @@ def init_db():
 def _migrate():
     """Apply schema upgrades to existing databases."""
     with _db() as conn:
+        # v0.3 → v0.4: add fw_devices table
+        tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+        if 'fw_devices' not in tables:
+            conn.executescript("""
+                CREATE TABLE IF NOT EXISTS fw_devices (
+                    mac        TEXT    PRIMARY KEY,
+                    ip         TEXT    NOT NULL DEFAULT '',
+                    name       TEXT    NOT NULL DEFAULT '',
+                    mac_vendor TEXT    NOT NULL DEFAULT '',
+                    last_active INTEGER NOT NULL DEFAULT 0,
+                    updated_at  INTEGER NOT NULL DEFAULT 0
+                );
+                CREATE INDEX IF NOT EXISTS idx_fw_devices_ip ON fw_devices(ip);
+            """)
+
         cols = {r[1] for r in conn.execute("PRAGMA table_info(conn_hourly)").fetchall()}
         if 'source_ip' not in cols:
             # v0.2 → v0.3: add source_ip to PRIMARY KEY
@@ -393,6 +417,37 @@ def get_all_settings(keys: list) -> dict:
             keys
         ).fetchall()
         return {r['key']: r['value'] for r in rows}
+
+
+# ── Firewalla devices ─────────────────────────────────────────────────────────
+
+def upsert_fw_device(mac: str, ip: str, name: str, mac_vendor: str, last_active: int):
+    with _db() as conn:
+        conn.execute("""
+            INSERT INTO fw_devices (mac, ip, name, mac_vendor, last_active, updated_at)
+            VALUES (?,?,?,?,?,?)
+            ON CONFLICT(mac) DO UPDATE SET
+                ip=excluded.ip, name=excluded.name,
+                mac_vendor=excluded.mac_vendor,
+                last_active=excluded.last_active,
+                updated_at=excluded.updated_at
+        """, (mac, ip, name, mac_vendor, last_active, int(time.time())))
+
+
+def get_fw_device_by_ip(ip: str) -> dict | None:
+    with _db() as conn:
+        row = conn.execute(
+            "SELECT mac, ip, name, mac_vendor, last_active FROM fw_devices WHERE ip=?", (ip,)
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def get_all_fw_devices() -> list:
+    with _db() as conn:
+        rows = conn.execute(
+            "SELECT mac, ip, name, mac_vendor, last_active FROM fw_devices ORDER BY name"
+        ).fetchall()
+        return [dict(r) for r in rows]
 
 
 # ── DNS cache ──────────────────────────────────────────────────────────────────
