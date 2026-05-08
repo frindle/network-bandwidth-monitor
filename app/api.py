@@ -291,6 +291,9 @@ def fw_sync():
     import app.firewalla as fw
     if not fw.available():
         return jsonify({'ok': False, 'message': 'Firewalla IP not configured'})
+    ok, msg = fw.test_connection()
+    if not ok:
+        return jsonify({'ok': False, 'message': msg})
     fw_collector.poll_once()
     count = len(db.get_all_fw_devices())
     return jsonify({'ok': True, 'message': f'Synced — {count} devices in database'})
