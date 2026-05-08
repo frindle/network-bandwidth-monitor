@@ -155,6 +155,11 @@
       <div class="hint">LAN IP of your Firewalla Gold Plus box</div>
     </div>
     <div class="field">
+      <label>API Port</label>
+      <input type="text" id="fw-port" placeholder="8834" autocomplete="off" style="width:100px">
+      <div class="hint">Default 8834 (local). Use 18834 if tunnelling via SSH or proxy.</div>
+    </div>
+    <div class="field">
       <label>API Token</label>
       <input type="password" id="fw-token" placeholder="Leave blank to keep existing" autocomplete="off">
       <div class="hint">
@@ -725,6 +730,7 @@ document.getElementById('range-btns').addEventListener('click',e=>{
 async function openSettings(){
   const data=await fetch(`${API}/api/settings`).then(r=>r.json());
   document.getElementById('fw-ip').value         = data.firewalla_ip||'';
+  document.getElementById('fw-port').value       = data.firewalla_port||'';
   document.getElementById('fw-token').value      = '';  // never pre-fill token
   document.getElementById('fw-token').placeholder= data.firewalla_token_set
     ? 'Leave blank to keep existing token' : 'Paste token here';
@@ -742,6 +748,7 @@ function closeSettings(){
 async function saveSettings(){
   const body={
     firewalla_ip:        document.getElementById('fw-ip').value.trim(),
+    firewalla_port:      document.getElementById('fw-port').value.trim(),
     firewalla_token:     document.getElementById('fw-token').value.trim(),
     local_subnet:        document.getElementById('s-subnet').value.trim(),
     cf_tunnel_container: document.getElementById('s-cf-container').value.trim(),
@@ -763,6 +770,7 @@ async function testFw(){
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify({
       firewalla_ip:    document.getElementById('fw-ip').value.trim(),
+      firewalla_port:  document.getElementById('fw-port').value.trim(),
       firewalla_token: document.getElementById('fw-token').value.trim(),
     })});
   const res=await fetch(`${API}/api/settings/fw_test`).then(r=>r.json());
@@ -780,7 +788,10 @@ async function syncFw(){
   // Save IP first in case it was just typed
   await fetch(`${API}/api/settings`,{method:'POST',
     headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({firewalla_ip: document.getElementById('fw-ip').value.trim()})});
+    body:JSON.stringify({
+      firewalla_ip:   document.getElementById('fw-ip').value.trim(),
+      firewalla_port: document.getElementById('fw-port').value.trim(),
+    })});
   const res=await fetch(`${API}/api/settings/fw_sync`,{method:'POST'}).then(r=>r.json());
   el.style.display='';
   el.className='test-result '+(res.ok?'test-ok':'test-fail');

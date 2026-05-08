@@ -15,6 +15,7 @@ def _setting(key: str) -> str:
 
 
 def _ip()    -> str: return _setting('firewalla_ip')
+def _port()  -> int: return int(_setting('firewalla_port') or 8834)
 def _token() -> str: return _setting('firewalla_token')
 
 
@@ -23,7 +24,7 @@ def available() -> bool:
 
 
 def _get(path: str):
-    conn = http.client.HTTPConnection(_ip(), 8834, timeout=8)
+    conn = http.client.HTTPConnection(_ip(), _port(), timeout=8)
     headers = {'Accept': 'application/json'}
     tok = _token()
     if tok:
