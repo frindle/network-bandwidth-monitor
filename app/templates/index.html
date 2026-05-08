@@ -9,271 +9,161 @@
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --bg:        #0d1117;
-      --surface:   #161b22;
-      --border:    #30363d;
-      --text:      #e6edf3;
-      --muted:     #8b949e;
-      --rx:        #3fb950;
-      --tx:        #f85149;
-      --accent:    #58a6ff;
-      --hover:     #1f2937;
+      --bg:      #0d1117;
+      --surface: #161b22;
+      --border:  #30363d;
+      --text:    #e6edf3;
+      --muted:   #8b949e;
+      --rx:      #3fb950;
+      --tx:      #f85149;
+      --accent:  #58a6ff;
+      --hover:   #1f2937;
+      --cf:      #f6821f;
     }
 
-    body {
-      background: var(--bg);
-      color: var(--text);
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-      font-size: 14px;
-      min-height: 100vh;
+    body { background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif; font-size:14px; }
+
+    header { display:flex; align-items:center; justify-content:space-between; padding:14px 24px; border-bottom:1px solid var(--border); background:var(--surface); gap:16px; flex-wrap:wrap; }
+    header h1 { font-size:17px; font-weight:600; display:flex; align-items:center; gap:10px; }
+    .version-badge { font-size:10px; font-weight:500; background:var(--hover); color:var(--muted); padding:2px 7px; border-radius:10px; }
+
+    #live-rates { display:flex; gap:16px; flex-wrap:wrap; }
+    .rate-item  { display:flex; flex-direction:column; align-items:flex-end; gap:1px; }
+    .rate-label { font-size:10px; color:var(--muted); }
+    .rate-value { font-size:12px; font-weight:600; font-variant-numeric:tabular-nums; }
+    .rate-rx { color:var(--rx); }
+    .rate-tx { color:var(--tx); }
+
+    main { padding:20px 24px; max-width:1400px; margin:0 auto; }
+
+    #status-bar { display:flex; align-items:center; gap:8px; font-size:11px; color:var(--muted); margin-bottom:16px; }
+    .dot { width:6px; height:6px; border-radius:50%; background:var(--rx); animation:pulse 2s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+    /* ── toolbar ── */
+    .toolbar { display:flex; align-items:center; gap:10px; margin-bottom:16px; flex-wrap:wrap; }
+    .label   { font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:.5px; color:var(--muted); white-space:nowrap; }
+
+    .btn-group { display:flex; gap:3px; background:var(--surface); border:1px solid var(--border); border-radius:7px; padding:3px; }
+    .btn-group button {
+      background:transparent; border:none; color:var(--muted); padding:5px 11px;
+      border-radius:5px; cursor:pointer; font-size:12px; font-weight:500; white-space:nowrap; transition:all .12s;
     }
+    .btn-group button:hover    { background:var(--hover); color:var(--text); }
+    .btn-group button.active   { background:var(--accent); color:#fff; }
+    .btn-group button.cf-active { background:var(--cf); color:#fff; }
 
-    header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 16px 24px;
-      border-bottom: 1px solid var(--border);
-      background: var(--surface);
-    }
+    .divider { width:1px; height:24px; background:var(--border); margin:0 4px; }
 
-    header h1 {
-      font-size: 18px;
-      font-weight: 600;
-      letter-spacing: -0.3px;
-    }
+    /* ── cards ── */
+    .card        { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:18px 20px; margin-bottom:16px; }
+    .card-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; flex-wrap:wrap; gap:8px; }
+    .card-title  { font-size:11px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.5px; }
 
-    #live-rates {
-      display: flex;
-      gap: 20px;
-      font-size: 12px;
-      color: var(--muted);
-    }
+    .legend      { display:flex; gap:14px; font-size:12px; }
+    .legend-item { display:flex; align-items:center; gap:5px; }
+    .legend-dot  { width:9px; height:9px; border-radius:50%; }
 
-    .rate-item { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
-    .rate-label { font-size: 11px; color: var(--muted); }
-    .rate-value { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
-    .rate-rx { color: var(--rx); }
-    .rate-tx { color: var(--tx); }
+    #chart-container { position:relative; height:260px; }
 
-    main { padding: 24px; max-width: 1400px; margin: 0 auto; }
+    /* ── totals strip ── */
+    .totals-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:10px; margin-bottom:16px; }
+    .total-card  { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:12px 14px; }
+    .total-period { font-size:10px; text-transform:uppercase; letter-spacing:.5px; color:var(--muted); margin-bottom:6px; }
+    .total-row   { display:flex; justify-content:space-between; align-items:baseline; margin-top:3px; }
+    .total-label { font-size:11px; color:var(--muted); }
+    .total-val   { font-size:13px; font-weight:600; font-variant-numeric:tabular-nums; }
+    .total-rx    { color:var(--rx); }
+    .total-tx    { color:var(--tx); }
 
-    .toolbar {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      margin-bottom: 20px;
-      flex-wrap: wrap;
-    }
-
-    .tab-group, .range-group {
-      display: flex;
-      gap: 4px;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 4px;
-    }
-
-    .tab-group button, .range-group button {
-      background: transparent;
-      border: none;
-      color: var(--muted);
-      padding: 6px 12px;
-      border-radius: 6px;
-      cursor: pointer;
-      font-size: 13px;
-      font-weight: 500;
-      transition: all 0.15s;
-    }
-
-    .tab-group button:hover, .range-group button:hover { background: var(--hover); color: var(--text); }
-    .tab-group button.active, .range-group button.active {
-      background: var(--accent);
-      color: #fff;
-    }
-
-    .label {
-      font-size: 11px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      color: var(--muted);
-    }
-
-    .card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 20px;
-      margin-bottom: 20px;
-    }
-
-    .card-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 16px;
-    }
-
-    .card-title {
-      font-size: 13px;
-      font-weight: 600;
-      color: var(--muted);
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-
-    .legend {
-      display: flex;
-      gap: 16px;
-      font-size: 12px;
-    }
-
-    .legend-item { display: flex; align-items: center; gap: 6px; }
-    .legend-dot  { width: 10px; height: 10px; border-radius: 50%; }
-
-    #chart-container { position: relative; height: 280px; }
-
-    /* ── connections table ── */
-    .conn-header {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-bottom: 12px;
-    }
-
-    .conn-count {
-      font-size: 11px;
-      background: var(--hover);
-      color: var(--muted);
-      padding: 2px 8px;
-      border-radius: 10px;
-    }
-
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 13px;
-    }
-
+    /* ── tables ── */
+    table { width:100%; border-collapse:collapse; font-size:13px; }
     thead th {
-      text-align: left;
-      font-weight: 600;
-      font-size: 11px;
-      text-transform: uppercase;
-      letter-spacing: 0.4px;
-      color: var(--muted);
-      padding: 8px 12px;
-      border-bottom: 1px solid var(--border);
-      cursor: pointer;
-      user-select: none;
+      text-align:left; font-weight:600; font-size:10px; text-transform:uppercase;
+      letter-spacing:.4px; color:var(--muted); padding:7px 10px;
+      border-bottom:1px solid var(--border); cursor:pointer; user-select:none; white-space:nowrap;
     }
+    thead th:hover { color:var(--text); }
+    thead th.asc::after  { content:' ↑'; }
+    thead th.desc::after { content:' ↓'; }
+    tbody tr { border-bottom:1px solid rgba(48,54,61,.4); transition:background .1s; }
+    tbody tr:last-child  { border-bottom:none; }
+    tbody tr:hover       { background:var(--hover); }
+    td { padding:8px 10px; vertical-align:middle; }
 
-    thead th:hover { color: var(--text); }
-    thead th.sorted-asc::after  { content: ' ↑'; }
-    thead th.sorted-desc::after { content: ' ↓'; }
+    .host-cell   { display:flex; flex-direction:column; gap:2px; }
+    .hostname    { font-weight:500; display:flex; align-items:center; gap:5px; }
+    .ip-small    { font-size:11px; color:var(--muted); font-variant-numeric:tabular-nums; }
 
-    tbody tr { border-bottom: 1px solid rgba(48,54,61,0.5); transition: background 0.1s; }
-    tbody tr:last-child { border-bottom: none; }
-    tbody tr:hover { background: var(--hover); }
-
-    td { padding: 9px 12px; vertical-align: middle; }
-
-    .host-cell { display: flex; flex-direction: column; gap: 2px; }
-    .hostname   { font-weight: 500; }
-    .ip-small   { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
-
-    .port-badge {
-      display: inline-block;
-      background: rgba(88,166,255,0.15);
-      color: var(--accent);
-      border-radius: 4px;
-      padding: 2px 6px;
-      font-size: 11px;
-      font-weight: 600;
-      font-variant-numeric: tabular-nums;
+    .badge {
+      display:inline-flex; align-items:center; border-radius:4px;
+      padding:1px 6px; font-size:10px; font-weight:600;
     }
+    .badge-port  { background:rgba(88,166,255,.15); color:var(--accent); font-variant-numeric:tabular-nums; }
+    .badge-tcp   { background:rgba(63,185,80,.15);  color:var(--rx); text-transform:uppercase; }
+    .badge-udp   { background:rgba(248,81,73,.15);  color:var(--tx); text-transform:uppercase; }
+    .badge-cf    { background:rgba(246,130,31,.15); color:var(--cf); gap:3px; }
+    .badge-cf::before { content:'☁'; }
 
-    .proto-badge {
-      display: inline-block;
-      border-radius: 4px;
-      padding: 2px 6px;
-      font-size: 11px;
-      font-weight: 600;
-      text-transform: uppercase;
-    }
-    .proto-tcp { background: rgba(63,185,80,0.15); color: var(--rx); }
-    .proto-udp { background: rgba(248,81,73,0.15);  color: var(--tx); }
+    .bar-cell  { display:flex; align-items:center; gap:7px; }
+    .bar-bg    { flex:1; height:3px; background:var(--border); border-radius:2px; min-width:50px; max-width:100px; }
+    .bar-fill  { height:100%; border-radius:2px; background:var(--accent); }
+    .bytes-val { font-variant-numeric:tabular-nums; min-width:65px; text-align:right; }
 
-    .bar-cell { display: flex; align-items: center; gap: 8px; }
-    .bar-bg {
-      flex: 1;
-      height: 4px;
-      background: var(--border);
-      border-radius: 2px;
-      min-width: 60px;
-      max-width: 120px;
+    /* ── containers grid ── */
+    .container-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:10px; }
+    .c-card {
+      background:var(--hover); border:1px solid var(--border); border-radius:8px;
+      padding:12px 14px; cursor:pointer; transition:border-color .15s;
     }
-    .bar-fill { height: 100%; border-radius: 2px; background: var(--accent); }
-    .bytes-val { font-variant-numeric: tabular-nums; color: var(--text); min-width: 70px; text-align: right; }
+    .c-card:hover     { border-color:var(--accent); }
+    .c-card.selected  { border-color:var(--accent); background:rgba(88,166,255,.08); }
+    .c-card.cf-card   { border-color:rgba(246,130,31,.4); }
+    .c-card.cf-card.selected { border-color:var(--cf); background:rgba(246,130,31,.08); }
+    .c-card.inactive  { opacity:.5; }
+    .c-name  { font-weight:600; font-size:13px; margin-bottom:6px; display:flex; align-items:center; gap:6px; }
+    .c-rates { display:flex; gap:10px; font-size:12px; font-variant-numeric:tabular-nums; }
 
-    .iface-badge {
-      font-size: 11px;
-      color: var(--muted);
-      background: var(--hover);
-      padding: 2px 6px;
-      border-radius: 4px;
-    }
-
-    .empty-state {
-      text-align: center;
-      padding: 40px;
-      color: var(--muted);
-      font-size: 13px;
-    }
-
-    #status-bar {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-size: 11px;
-      color: var(--muted);
-      margin-top: -10px;
-      margin-bottom: 20px;
-    }
-
-    .status-dot {
-      width: 6px; height: 6px; border-radius: 50%;
-      background: var(--rx);
-      animation: pulse 2s infinite;
-    }
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50%       { opacity: 0.4; }
-    }
+    .empty-state { text-align:center; padding:36px; color:var(--muted); font-size:13px; }
+    .conn-meta   { display:flex; align-items:center; gap:8px; }
+    .conn-count  { font-size:11px; background:var(--hover); color:var(--muted); padding:2px 7px; border-radius:10px; }
   </style>
 </head>
 <body>
 
 <header>
-  <h1>Network Monitor</h1>
+  <h1>
+    Network Monitor
+    <span class="version-badge" id="ver">v0.2.0</span>
+  </h1>
   <div id="live-rates"></div>
 </header>
 
 <main>
-  <div id="status-bar">
-    <div class="status-dot"></div>
-    <span id="status-text">Connecting…</span>
-  </div>
+  <div id="status-bar"><div class="dot"></div><span id="status-text">Connecting…</span></div>
 
+  <!-- toolbar -->
   <div class="toolbar">
-    <span class="label">Interface</span>
-    <div class="tab-group" id="iface-tabs">
-      <button class="active" data-iface="all">All</button>
+    <!-- view mode -->
+    <span class="label">View</span>
+    <div class="btn-group" id="view-btns">
+      <button class="active" data-view="interfaces">Interfaces</button>
+      <button data-view="containers">Containers</button>
     </div>
-    <span class="label" style="margin-left:8px">Range</span>
-    <div class="range-group" id="range-btns">
+
+    <div class="divider"></div>
+
+    <!-- interface / container tabs (populated dynamically) -->
+    <span class="label" id="tab-label">Interface</span>
+    <div class="btn-group" id="subject-tabs">
+      <button class="active" data-subject="all">All</button>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- range -->
+    <span class="label">Range</span>
+    <div class="btn-group" id="range-btns">
       <button data-range="1h">1h</button>
       <button data-range="6h">6h</button>
       <button class="active" data-range="24h">24h</button>
@@ -283,25 +173,30 @@
     </div>
   </div>
 
+  <!-- period totals -->
+  <div class="totals-grid" id="totals-grid"></div>
+
+  <!-- bandwidth chart -->
   <div class="card">
     <div class="card-header">
-      <span class="card-title">Bandwidth</span>
+      <span class="card-title" id="chart-title">Bandwidth</span>
       <div class="legend">
-        <div class="legend-item"><div class="legend-dot" style="background:var(--rx)"></div>Download (RX)</div>
-        <div class="legend-item"><div class="legend-dot" style="background:var(--tx)"></div>Upload (TX)</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--rx)"></div>Download</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--tx)"></div>Upload</div>
       </div>
     </div>
-    <div id="chart-container">
-      <canvas id="bwChart"></canvas>
-    </div>
+    <div id="chart-container"><canvas id="bwChart"></canvas></div>
   </div>
 
-  <div class="card">
-    <div class="conn-header">
-      <span class="card-title">Top Destinations</span>
-      <span class="conn-count" id="conn-count">0</span>
+  <!-- interfaces view: connections table -->
+  <div class="card" id="conn-card">
+    <div class="card-header">
+      <div class="conn-meta">
+        <span class="card-title">Top Destinations</span>
+        <span class="conn-count" id="conn-count">0</span>
+      </div>
     </div>
-    <table id="conn-table">
+    <table>
       <thead>
         <tr>
           <th data-col="hostname">Host</th>
@@ -309,7 +204,7 @@
           <th data-col="protocol">Proto</th>
           <th data-col="total_bytes">Total</th>
           <th data-col="tx_bytes">↑ Sent</th>
-          <th data-col="rx_bytes">↓ Received</th>
+          <th data-col="rx_bytes">↓ Recv</th>
           <th data-col="hits">Samples</th>
         </tr>
       </thead>
@@ -317,250 +212,346 @@
     </table>
     <div class="empty-state" id="conn-empty" style="display:none">No connection data yet — check back in a minute.</div>
   </div>
+
+  <!-- containers view: grid -->
+  <div class="card" id="container-card" style="display:none">
+    <div class="card-header">
+      <div class="conn-meta">
+        <span class="card-title">Docker Containers</span>
+        <span class="conn-count" id="container-count">0</span>
+      </div>
+    </div>
+    <div class="container-grid" id="container-grid"></div>
+    <div class="empty-state" id="container-empty" style="display:none">
+      Docker socket not available or no containers running.
+    </div>
+  </div>
 </main>
 
 <script>
-  const API = '';
-  let currentIface = 'all';
-  let currentRange = '24h';
-  let bwChart      = null;
-  let sortCol      = 'total_bytes';
-  let sortDir      = 'desc';
-  let connData     = [];
-  let maxBytes     = 1;
+const API = '';
 
-  // ── helpers ────────────────────────────────────────────────────────────────
+let currentView    = 'interfaces';
+let currentSubject = 'all';   // iface name or container id
+let currentRange   = '24h';
+let sortCol = 'total_bytes', sortDir = 'desc';
+let connData = [], containerData = [], maxBytes = 1;
+let bwChart  = null;
 
-  function fmtBytes(b) {
-    if (b === 0) return '0 B';
-    const u = ['B','KB','MB','GB','TB'];
-    const i = Math.floor(Math.log(b) / Math.log(1024));
-    return (b / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 2) + ' ' + u[i];
-  }
+// ── helpers ──────────────────────────────────────────────────────────────────
 
-  function fmtMbps(mbps) {
-    if (mbps >= 1000) return (mbps / 1000).toFixed(2) + ' Gbps';
-    if (mbps >= 1)    return mbps.toFixed(2) + ' Mbps';
-    return (mbps * 1000).toFixed(1) + ' Kbps';
-  }
+function fmtBytes(b) {
+  if (!b || b === 0) return '0 B';
+  const u = ['B','KB','MB','GB','TB'];
+  const i = Math.floor(Math.log(b) / Math.log(1024));
+  return (b / Math.pow(1024,i)).toFixed(i===0?0:2) + ' ' + u[i];
+}
+function fmtMbps(mbps) {
+  if (mbps >= 1000) return (mbps/1000).toFixed(2)+' Gbps';
+  if (mbps >= 1)    return mbps.toFixed(2)+' Mbps';
+  return (mbps*1000).toFixed(1)+' Kbps';
+}
+function tsLabel(ts, range) {
+  const d = new Date(ts*1000);
+  if (range === '1h' || range === '6h')
+    return d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  if (range === '24h')
+    return d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+  return d.toLocaleDateString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+}
 
-  function tsLabel(ts, range) {
-    const d = new Date(ts * 1000);
-    if (range === '1h' || range === '6h') {
-      return d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'});
-    }
-    if (range === '24h') {
-      return d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-    }
-    return d.toLocaleDateString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'});
-  }
+const PORT_NAMES = {
+  80:'HTTP',443:'HTTPS',53:'DNS',22:'SSH',25:'SMTP',587:'SMTP',993:'IMAP',
+  143:'IMAP',110:'POP3',3306:'MySQL',5432:'Postgres',6379:'Redis',27017:'Mongo',
+  8080:'HTTP-alt',8443:'HTTPS-alt',123:'NTP',21:'FTP',3389:'RDP',5900:'VNC',
+  1194:'OpenVPN',51820:'WireGuard',7844:'CF-QUIC',4500:'IPSec',500:'IKE',
+  67:'DHCP',68:'DHCP',161:'SNMP',2049:'NFS',139:'SMB',445:'SMB',32400:'Plex',
+};
 
-  function knownPort(port) {
-    const m = {80:'HTTP',443:'HTTPS',53:'DNS',22:'SSH',25:'SMTP',587:'SMTP',993:'IMAP',
-               143:'IMAP',110:'POP3',3306:'MySQL',5432:'Postgres',6379:'Redis',
-               27017:'MongoDB',8080:'HTTP-alt',8443:'HTTPS-alt',123:'NTP',
-               21:'FTP',3389:'RDP',5900:'VNC',1194:'OpenVPN',51820:'WireGuard',
-               4500:'IPSec',500:'IKE',67:'DHCP',68:'DHCP',161:'SNMP',162:'SNMP'};
-    return m[port] || null;
-  }
+// ── chart ─────────────────────────────────────────────────────────────────────
 
-  // ── chart ──────────────────────────────────────────────────────────────────
-
-  function initChart() {
-    const ctx = document.getElementById('bwChart').getContext('2d');
-    bwChart = new Chart(ctx, {
-      type: 'line',
-      data: { labels: [], datasets: [
-        { label: 'Download (RX)', data: [], borderColor: '#3fb950', backgroundColor: 'rgba(63,185,80,0.08)',
-          borderWidth: 2, pointRadius: 0, fill: true, tension: 0.3 },
-        { label: 'Upload (TX)',   data: [], borderColor: '#f85149', backgroundColor: 'rgba(248,81,73,0.08)',
-          borderWidth: 2, pointRadius: 0, fill: true, tension: 0.3 },
-      ]},
-      options: {
-        responsive: true, maintainAspectRatio: false,
-        animation: false,
-        interaction: { mode: 'index', intersect: false },
-        plugins: {
-          legend: { display: false },
-          tooltip: {
-            backgroundColor: '#1f2937',
-            borderColor: '#30363d',
-            borderWidth: 1,
-            titleColor: '#8b949e',
-            bodyColor: '#e6edf3',
-            callbacks: {
-              label: ctx => ` ${ctx.dataset.label}: ${fmtMbps(ctx.raw)}`
-            }
-          }
-        },
-        scales: {
-          x: { ticks: { color: '#8b949e', maxTicksLimit: 8, maxRotation: 0 },
-               grid:  { color: 'rgba(48,54,61,0.5)' } },
-          y: { ticks: { color: '#8b949e',
-                        callback: v => fmtMbps(v) },
-               grid:  { color: 'rgba(48,54,61,0.5)' },
-               min: 0 }
+function initChart() {
+  bwChart = new Chart(document.getElementById('bwChart').getContext('2d'), {
+    type: 'line',
+    data: { labels:[], datasets:[
+      { label:'Download (RX)', data:[], borderColor:'#3fb950', backgroundColor:'rgba(63,185,80,.08)',
+        borderWidth:2, pointRadius:0, fill:true, tension:.3 },
+      { label:'Upload (TX)',   data:[], borderColor:'#f85149', backgroundColor:'rgba(248,81,73,.08)',
+        borderWidth:2, pointRadius:0, fill:true, tension:.3 },
+    ]},
+    options:{
+      responsive:true, maintainAspectRatio:false, animation:false,
+      interaction:{mode:'index',intersect:false},
+      plugins:{
+        legend:{display:false},
+        tooltip:{
+          backgroundColor:'#1f2937', borderColor:'#30363d', borderWidth:1,
+          titleColor:'#8b949e', bodyColor:'#e6edf3',
+          callbacks:{ label: ctx => ` ${ctx.dataset.label}: ${fmtMbps(ctx.raw)}` }
         }
+      },
+      scales:{
+        x:{ ticks:{color:'#8b949e',maxTicksLimit:8,maxRotation:0}, grid:{color:'rgba(48,54,61,.5)'} },
+        y:{ min:0, ticks:{color:'#8b949e', callback:v=>fmtMbps(v)}, grid:{color:'rgba(48,54,61,.5)'} }
       }
-    });
-  }
-
-  async function refreshBandwidth() {
-    try {
-      const iface = currentIface === 'all' ? 'eth0' : currentIface;
-      const res  = await fetch(`${API}/api/bandwidth?iface=${iface}&range=${currentRange}`);
-      const data = await res.json();
-      bwChart.data.labels               = data.map(d => tsLabel(d.ts, currentRange));
-      bwChart.data.datasets[0].data     = data.map(d => d.rx);
-      bwChart.data.datasets[1].data     = data.map(d => d.tx);
-      bwChart.update('none');
-    } catch(e) { console.error('bandwidth fetch', e); }
-  }
-
-  // ── interfaces ────────────────────────────────────────────────────────────
-
-  async function refreshInterfaces() {
-    try {
-      const res  = await fetch(`${API}/api/interfaces`);
-      const data = await res.json();
-
-      const container = document.getElementById('iface-tabs');
-      const existing  = new Set([...container.querySelectorAll('[data-iface]')].map(b => b.dataset.iface));
-      data.forEach(iface => {
-        if (!existing.has(iface.name)) {
-          const btn = document.createElement('button');
-          btn.dataset.iface = iface.name;
-          btn.textContent   = iface.name;
-          btn.addEventListener('click', () => setIface(iface.name));
-          container.appendChild(btn);
-        }
-      });
-
-      const liveEl = document.getElementById('live-rates');
-      liveEl.innerHTML = data.map(iface => `
-        <div class="rate-item">
-          <span class="rate-label">${iface.name}</span>
-          <span class="rate-value rate-rx">↓ ${fmtMbps(iface.rx_mbps)}</span>
-          <span class="rate-value rate-tx">↑ ${fmtMbps(iface.tx_mbps)}</span>
-        </div>`).join('');
-
-      document.getElementById('status-text').textContent =
-        `Live · updated ${new Date().toLocaleTimeString()}`;
-    } catch(e) {
-      document.getElementById('status-text').textContent = 'Connection error';
     }
-  }
+  });
+}
 
-  // ── connections ───────────────────────────────────────────────────────────
-
-  async function refreshConnections() {
-    try {
-      const res  = await fetch(`${API}/api/connections?iface=${currentIface}&range=${currentRange}`);
-      connData   = await res.json();
-      maxBytes   = Math.max(1, ...connData.map(r => r.total_bytes));
-      renderConnTable();
-    } catch(e) { console.error('connections fetch', e); }
-  }
-
-  function renderConnTable() {
-    const col    = sortCol;
-    const dir    = sortDir === 'asc' ? 1 : -1;
-    const sorted = [...connData].sort((a, b) => {
-      const av = a[col] ?? 0, bv = b[col] ?? 0;
-      if (typeof av === 'string') return dir * av.localeCompare(bv);
-      return dir * (av - bv);
-    });
-
-    document.querySelectorAll('thead th').forEach(th => {
-      th.classList.remove('sorted-asc', 'sorted-desc');
-      if (th.dataset.col === col) th.classList.add(sortDir === 'asc' ? 'sorted-asc' : 'sorted-desc');
-    });
-
-    const body  = document.getElementById('conn-body');
-    const empty = document.getElementById('conn-empty');
-    document.getElementById('conn-count').textContent = sorted.length;
-
-    if (sorted.length === 0) {
-      body.innerHTML = '';
-      empty.style.display = 'block';
-      return;
+async function refreshChart() {
+  try {
+    let url;
+    if (currentView === 'interfaces') {
+      const iface = currentSubject === 'all' ? 'bond0' : currentSubject;
+      url = `${API}/api/bandwidth?iface=${iface}&range=${currentRange}`;
+    } else {
+      if (!currentSubject || currentSubject === 'all') return;
+      url = `${API}/api/container_bandwidth?id=${currentSubject}&range=${currentRange}`;
     }
-    empty.style.display = 'none';
+    const data = await fetch(url).then(r=>r.json());
+    bwChart.data.labels           = data.map(d=>tsLabel(d.ts, currentRange));
+    bwChart.data.datasets[0].data = data.map(d=>d.rx);
+    bwChart.data.datasets[1].data = data.map(d=>d.tx);
+    bwChart.update('none');
+  } catch(e) { console.error('chart', e); }
+}
 
-    const portLabel = p => {
-      const known = knownPort(p);
-      return known ? `<span class="port-badge" title="${p}">${known}</span>` :
-                     `<span class="port-badge">${p}</span>`;
-    };
+// ── totals ────────────────────────────────────────────────────────────────────
 
-    body.innerHTML = sorted.map(r => {
-      const isIP     = r.hostname === r.remote_ip;
-      const hostCell = isIP
-        ? `<div class="host-cell"><span class="hostname ip-small">${r.remote_ip}</span></div>`
-        : `<div class="host-cell"><span class="hostname">${r.hostname}</span><span class="ip-small">${r.remote_ip}</span></div>`;
-      const pct      = Math.round(r.total_bytes / maxBytes * 100);
-      const barFill  = `<div class="bar-bg"><div class="bar-fill" style="width:${pct}%"></div></div>`;
-      const protoClass = r.protocol === 'tcp' ? 'proto-tcp' : 'proto-udp';
-      return `<tr>
-        <td>${hostCell}</td>
-        <td>${portLabel(r.remote_port)}</td>
-        <td><span class="proto-badge ${protoClass}">${r.protocol}</span></td>
-        <td><div class="bar-cell">${barFill}<span class="bytes-val">${fmtBytes(r.total_bytes)}</span></div></td>
-        <td class="bytes-val">${fmtBytes(r.tx_bytes)}</td>
-        <td class="bytes-val">${fmtBytes(r.rx_bytes)}</td>
-        <td style="color:var(--muted)">${r.hits}</td>
-      </tr>`;
+async function refreshTotals() {
+  try {
+    const subject = currentView === 'containers' ? 'containers' : 'interfaces';
+    const data    = await fetch(`${API}/api/totals?subject=${subject}`).then(r=>r.json());
+    const grid    = document.getElementById('totals-grid');
+    const labels  = {'1d':'Last 24h','7d':'Last 7d','14d':'Last 14d','30d':'Last 30d'};
+
+    // Find row for current subject (iface or container_id)
+    grid.innerHTML = Object.entries(labels).map(([key, label]) => {
+      const rows  = data[key] || [];
+      const match = currentSubject === 'all'
+        ? rows.reduce((acc,r)=>({ rx_bytes:(acc.rx_bytes||0)+(r.rx_bytes||0), tx_bytes:(acc.tx_bytes||0)+(r.tx_bytes||0) }),{})
+        : rows.find(r => (r.iface||r.container_id) === currentSubject) || {};
+      return `<div class="total-card">
+        <div class="total-period">${label}</div>
+        <div class="total-row">
+          <span class="total-label">↓ Download</span>
+          <span class="total-val total-rx">${fmtBytes(match.rx_bytes||0)}</span>
+        </div>
+        <div class="total-row">
+          <span class="total-label">↑ Upload</span>
+          <span class="total-val total-tx">${fmtBytes(match.tx_bytes||0)}</span>
+        </div>
+      </div>`;
     }).join('');
-  }
+  } catch(e) { console.error('totals', e); }
+}
 
-  // ── state setters ─────────────────────────────────────────────────────────
+// ── live rates header ─────────────────────────────────────────────────────────
 
-  function setIface(iface) {
-    currentIface = iface;
-    document.querySelectorAll('#iface-tabs button').forEach(b =>
-      b.classList.toggle('active', b.dataset.iface === iface));
-    refreshAll();
-  }
+async function refreshHeader() {
+  try {
+    const data = currentView === 'interfaces'
+      ? await fetch(`${API}/api/interfaces`).then(r=>r.json())
+      : await fetch(`${API}/api/containers`).then(r=>r.json());
 
-  function setRange(range) {
-    currentRange = range;
-    document.querySelectorAll('#range-btns button').forEach(b =>
-      b.classList.toggle('active', b.dataset.range === range));
-    refreshAll();
-  }
+    document.getElementById('live-rates').innerHTML = data
+      .filter(x => x.rx_mbps > 0 || x.tx_mbps > 0)
+      .slice(0, 8)
+      .map(x => {
+        const name = x.name || x.id;
+        const cf   = x.is_cloudflare ? ' ☁' : '';
+        return `<div class="rate-item">
+          <span class="rate-label">${name}${cf}</span>
+          <span class="rate-value rate-rx">↓ ${fmtMbps(x.rx_mbps)}</span>
+          <span class="rate-value rate-tx">↑ ${fmtMbps(x.tx_mbps)}</span>
+        </div>`;
+      }).join('');
 
-  async function refreshAll() {
-    await Promise.all([refreshBandwidth(), refreshConnections()]);
-  }
+    document.getElementById('status-text').textContent = `Live · ${new Date().toLocaleTimeString()}`;
 
-  // ── event listeners ───────────────────────────────────────────────────────
-
-  document.getElementById('iface-tabs').addEventListener('click', e => {
-    if (e.target.matches('button')) setIface(e.target.dataset.iface);
-  });
-  document.getElementById('range-btns').addEventListener('click', e => {
-    if (e.target.matches('button')) setRange(e.target.dataset.range);
-  });
-  document.querySelectorAll('thead th[data-col]').forEach(th => {
-    th.addEventListener('click', () => {
-      if (sortCol === th.dataset.col) {
-        sortDir = sortDir === 'desc' ? 'asc' : 'desc';
-      } else {
-        sortCol = th.dataset.col;
-        sortDir = 'desc';
+    // Populate subject tabs
+    const tabEl   = document.getElementById('subject-tabs');
+    const existing = new Set([...tabEl.querySelectorAll('[data-subject]')].map(b=>b.dataset.subject));
+    data.forEach(x => {
+      const sid = currentView === 'interfaces' ? x.name : x.id;
+      if (!existing.has(sid)) {
+        const btn = document.createElement('button');
+        btn.dataset.subject = sid;
+        btn.textContent = x.name || x.id;
+        if (x.is_cloudflare) btn.style.borderLeft = '2px solid var(--cf)';
+        btn.addEventListener('click', () => setSubject(sid));
+        tabEl.appendChild(btn);
+        existing.add(sid);
       }
-      renderConnTable();
     });
+  } catch(e) {
+    document.getElementById('status-text').textContent = 'Connection error';
+  }
+}
+
+// ── connections ───────────────────────────────────────────────────────────────
+
+async function refreshConnections() {
+  try {
+    const iface = currentSubject === 'all' ? 'all' : currentSubject;
+    connData    = await fetch(`${API}/api/connections?iface=${iface}&range=${currentRange}`).then(r=>r.json());
+    maxBytes    = Math.max(1, ...connData.map(r=>r.total_bytes));
+    renderConnTable();
+  } catch(e) { console.error('connections', e); }
+}
+
+function renderConnTable() {
+  const dir    = sortDir === 'asc' ? 1 : -1;
+  const sorted = [...connData].sort((a,b) => {
+    const av=a[sortCol]??0, bv=b[sortCol]??0;
+    return typeof av==='string' ? dir*av.localeCompare(bv) : dir*(av-bv);
   });
 
-  // ── init + polling ────────────────────────────────────────────────────────
+  document.querySelectorAll('thead th[data-col]').forEach(th => {
+    th.classList.remove('asc','desc');
+    if (th.dataset.col === sortCol) th.classList.add(sortDir);
+  });
 
-  initChart();
-  refreshInterfaces();
+  const body  = document.getElementById('conn-body');
+  const empty = document.getElementById('conn-empty');
+  document.getElementById('conn-count').textContent = sorted.length;
+
+  if (!sorted.length) { body.innerHTML=''; empty.style.display='block'; return; }
+  empty.style.display = 'none';
+
+  body.innerHTML = sorted.map(r => {
+    const isIP   = r.hostname === r.remote_ip;
+    const cfBadge = r.is_cloudflare ? '<span class="badge badge-cf">CF</span>' : '';
+    const host   = isIP
+      ? `<div class="host-cell"><span class="hostname ip-small">${r.remote_ip}${cfBadge?'&nbsp;'+cfBadge:''}</span></div>`
+      : `<div class="host-cell"><span class="hostname">${r.hostname} ${cfBadge}</span><span class="ip-small">${r.remote_ip}</span></div>`;
+    const port   = PORT_NAMES[r.remote_port]
+      ? `<span class="badge badge-port" title="${r.remote_port}">${PORT_NAMES[r.remote_port]}</span>`
+      : `<span class="badge badge-port">${r.remote_port}</span>`;
+    const proto  = `<span class="badge badge-${r.protocol}">${r.protocol}</span>`;
+    const pct    = Math.round(r.total_bytes / maxBytes * 100);
+    const bar    = `<div class="bar-bg"><div class="bar-fill" style="width:${pct}%"></div></div>`;
+    return `<tr>
+      <td>${host}</td>
+      <td>${port}</td>
+      <td>${proto}</td>
+      <td><div class="bar-cell">${bar}<span class="bytes-val">${fmtBytes(r.total_bytes)}</span></div></td>
+      <td class="bytes-val">${fmtBytes(r.tx_bytes)}</td>
+      <td class="bytes-val">${fmtBytes(r.rx_bytes)}</td>
+      <td style="color:var(--muted)">${r.hits}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ── containers ────────────────────────────────────────────────────────────────
+
+async function refreshContainers() {
+  try {
+    containerData = await fetch(`${API}/api/containers`).then(r=>r.json());
+    renderContainerGrid();
+  } catch(e) { console.error('containers', e); }
+}
+
+function renderContainerGrid() {
+  const grid  = document.getElementById('container-grid');
+  const empty = document.getElementById('container-empty');
+  document.getElementById('container-count').textContent = containerData.length;
+
+  if (!containerData.length) { grid.innerHTML=''; empty.style.display='block'; return; }
+  empty.style.display = 'none';
+
+  grid.innerHTML = containerData.map(c => {
+    const cfClass  = c.is_cloudflare ? ' cf-card' : '';
+    const selClass = c.id === currentSubject ? ' selected' : '';
+    const inactive = !c.active ? ' inactive' : '';
+    const cfBadge  = c.is_cloudflare ? '<span class="badge badge-cf" style="font-size:9px">CF Tunnel</span>' : '';
+    const status   = c.active
+      ? `<span style="color:var(--rx);font-size:10px">● live</span>`
+      : `<span style="color:var(--muted);font-size:10px">● stopped</span>`;
+    return `<div class="c-card${cfClass}${selClass}${inactive}" data-cid="${c.id}" onclick="setSubject('${c.id}')">
+      <div class="c-name">${c.name} ${cfBadge}</div>
+      <div class="c-rates">
+        <span class="rate-rx">↓ ${fmtMbps(c.rx_mbps)}</span>
+        <span class="rate-tx">↑ ${fmtMbps(c.tx_mbps)}</span>
+        <span style="margin-left:auto">${status}</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ── state setters ─────────────────────────────────────────────────────────────
+
+function setView(view) {
+  currentView    = view;
+  currentSubject = 'all';
+
+  document.querySelectorAll('#view-btns button').forEach(b =>
+    b.classList.toggle('active', b.dataset.view === view));
+
+  // Swap visible panels
+  document.getElementById('conn-card').style.display      = view==='interfaces' ? '' : 'none';
+  document.getElementById('container-card').style.display = view==='containers' ? '' : 'none';
+  document.getElementById('tab-label').textContent        = view==='interfaces' ? 'Interface' : 'Container';
+  document.getElementById('chart-title').textContent      = view==='interfaces' ? 'Bandwidth' : 'Container Bandwidth';
+
+  // Clear tabs and repopulate
+  const tabEl = document.getElementById('subject-tabs');
+  tabEl.innerHTML = '<button class="active" data-subject="all">All</button>';
+  tabEl.querySelector('[data-subject=all]').addEventListener('click', ()=>setSubject('all'));
+
   refreshAll();
+}
 
-  setInterval(refreshInterfaces,  10000);
-  setInterval(refreshAll,         30000);
+function setSubject(subject) {
+  currentSubject = subject;
+  document.querySelectorAll('#subject-tabs button').forEach(b =>
+    b.classList.toggle('active', b.dataset.subject === subject));
+  // Highlight cf-active
+  const btn = document.querySelector(`#subject-tabs [data-subject="${subject}"]`);
+  if (btn?.style.borderLeft) btn.classList.add('cf-active');
+
+  renderContainerGrid();
+  refreshAll();
+}
+
+function setRange(range) {
+  currentRange = range;
+  document.querySelectorAll('#range-btns button').forEach(b =>
+    b.classList.toggle('active', b.dataset.range === range));
+  refreshAll();
+}
+
+async function refreshAll() {
+  await Promise.all([
+    refreshHeader(),
+    refreshChart(),
+    refreshTotals(),
+    currentView === 'interfaces' ? refreshConnections() : refreshContainers(),
+  ]);
+}
+
+// ── events ────────────────────────────────────────────────────────────────────
+
+document.getElementById('view-btns').addEventListener('click', e => {
+  if (e.target.matches('button')) setView(e.target.dataset.view);
+});
+document.getElementById('range-btns').addEventListener('click', e => {
+  if (e.target.matches('button')) setRange(e.target.dataset.range);
+});
+document.querySelectorAll('thead th[data-col]').forEach(th => {
+  th.addEventListener('click', () => {
+    sortDir = sortCol===th.dataset.col ? (sortDir==='desc'?'asc':'desc') : 'desc';
+    sortCol = th.dataset.col;
+    renderConnTable();
+  });
+});
+
+// ── boot ──────────────────────────────────────────────────────────────────────
+
+initChart();
+refreshAll();
+setInterval(refreshHeader, 10000);
+setInterval(refreshAll,    30000);
 </script>
 </body>
 </html>

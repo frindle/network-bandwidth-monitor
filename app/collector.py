@@ -8,6 +8,7 @@ import time
 from apscheduler.schedulers.background import BackgroundScheduler
 
 import app.database as db
+import app.docker_stats as docker_stats
 
 NET_BASE     = os.environ.get('NET_BASE', '/host/net')
 NET_DEV      = f'{NET_BASE}/dev'
@@ -198,7 +199,10 @@ def start():
     collect_bandwidth()   # seed _last_iface_bytes so first real read has a baseline
 
     _scheduler = BackgroundScheduler(daemon=True)
-    _scheduler.add_job(collect_bandwidth,   'interval', seconds=10, id='bw')
-    _scheduler.add_job(collect_connections, 'interval', seconds=60, id='conn')
-    _scheduler.add_job(db.aggregate_hourly, 'interval', hours=1,   id='agg')
+    _scheduler.add_job(collect_bandwidth,              'interval', seconds=10, id='bw')
+    _scheduler.add_job(collect_connections,            'interval', seconds=60, id='conn')
+    _scheduler.add_job(db.aggregate_hourly,            'interval', hours=1,   id='agg')
+    if docker_stats.available():
+        docker_stats.collect_docker_stats()   # seed baseline bytes
+        _scheduler.add_job(docker_stats.collect_docker_stats, 'interval', seconds=10, id='docker')
     _scheduler.start()
