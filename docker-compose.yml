@@ -1,0 +1,35 @@
+services:
+  netmon:
+    build: .
+    container_name: netmon
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    volumes:
+      # Mounts host PID-1's network namespace so we see Unraid's interfaces/conntrack
+      - /proc/1/net:/host/net:ro
+      # Persistent SQLite database
+      - netmon_data:/data
+    environment:
+      - DB_PATH=/data/netmon.db
+      - NET_BASE=/host/net
+    networks:
+      netmon_macvlan:
+        ipv4_address: 10.0.9.47
+
+networks:
+  netmon_macvlan:
+    driver: macvlan
+    driver_opts:
+      # Use your Unraid host's physical NIC (eth0, eth1, bond0 — check `ip link`)
+      parent: eth0
+    ipam:
+      driver: default
+      config:
+        - subnet: 10.0.0.0/20
+          # Set this to your actual network gateway
+          gateway: 10.0.0.1
+
+volumes:
+  netmon_data:
