@@ -22,15 +22,14 @@ networks:
   netmon_macvlan:
     driver: macvlan
     driver_opts:
-      # br0  = main LAN bridge (Unraid default, shim-br0 lets the host reach this container)
-      # br0.10 = VLAN 10 bridge — use this if 10.0.0.0/20 is on VLAN 10
-      parent: br0
+      # bond0 is the physical bonded NIC underlying br0.
+      # macvlan on a bridge (br0) can fail with "device busy" on some kernels;
+      # using the physical interface directly avoids that.
+      parent: bond0
     ipam:
       driver: default
       config:
         - subnet: 10.0.0.0/20
-          # ip_range limits Docker's IPAM ownership to just this IP, avoiding the
-          # "pool overlaps" error caused by br0 already occupying 10.0.0.0/20
           ip_range: 10.0.9.47/32
 
 volumes:
