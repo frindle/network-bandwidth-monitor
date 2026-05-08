@@ -6,164 +6,132 @@
   <title>Network Monitor</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
   <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-    :root {
-      --bg:      #0d1117;
-      --surface: #161b22;
-      --border:  #30363d;
-      --text:    #e6edf3;
-      --muted:   #8b949e;
-      --rx:      #3fb950;
-      --tx:      #f85149;
-      --accent:  #58a6ff;
-      --hover:   #1f2937;
-      --cf:      #f6821f;
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{
+      --bg:#0d1117;--surface:#161b22;--border:#30363d;--text:#e6edf3;
+      --muted:#8b949e;--rx:#3fb950;--tx:#f85149;--accent:#58a6ff;
+      --hover:#1f2937;--cf:#f6821f;--tunnel:#a371f7;
     }
+    body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;font-size:14px}
 
-    body { background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif; font-size:14px; }
+    /* header */
+    header{display:flex;align-items:center;justify-content:space-between;padding:12px 20px;border-bottom:1px solid var(--border);background:var(--surface);gap:12px;flex-wrap:wrap}
+    header h1{font-size:16px;font-weight:600;display:flex;align-items:center;gap:8px}
+    .ver{font-size:10px;background:var(--hover);color:var(--muted);padding:2px 6px;border-radius:10px}
+    #live-rates{display:flex;gap:14px;flex-wrap:wrap}
+    .ri{display:flex;flex-direction:column;align-items:flex-end;gap:1px}
+    .ri .rl{font-size:10px;color:var(--muted)}
+    .ri .rv{font-size:12px;font-weight:600;font-variant-numeric:tabular-nums}
+    .c-rx{color:var(--rx)}.c-tx{color:var(--tx)}
 
-    header { display:flex; align-items:center; justify-content:space-between; padding:14px 24px; border-bottom:1px solid var(--border); background:var(--surface); gap:16px; flex-wrap:wrap; }
-    header h1 { font-size:17px; font-weight:600; display:flex; align-items:center; gap:10px; }
-    .version-badge { font-size:10px; font-weight:500; background:var(--hover); color:var(--muted); padding:2px 7px; border-radius:10px; }
+    /* main */
+    main{padding:16px 20px;max-width:1440px;margin:0 auto}
+    #sbar{display:flex;align-items:center;gap:7px;font-size:11px;color:var(--muted);margin-bottom:14px}
+    .dot{width:6px;height:6px;border-radius:50%;background:var(--rx);animation:pulse 2s infinite}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
 
-    #live-rates { display:flex; gap:16px; flex-wrap:wrap; }
-    .rate-item  { display:flex; flex-direction:column; align-items:flex-end; gap:1px; }
-    .rate-label { font-size:10px; color:var(--muted); }
-    .rate-value { font-size:12px; font-weight:600; font-variant-numeric:tabular-nums; }
-    .rate-rx { color:var(--rx); }
-    .rate-tx { color:var(--tx); }
+    /* toolbar */
+    .toolbar{display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+    .lbl{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);white-space:nowrap}
+    .bg{display:flex;gap:3px;background:var(--surface);border:1px solid var(--border);border-radius:7px;padding:3px}
+    .bg button{background:transparent;border:none;color:var(--muted);padding:5px 10px;border-radius:5px;cursor:pointer;font-size:12px;font-weight:500;white-space:nowrap;transition:all .12s}
+    .bg button:hover{background:var(--hover);color:var(--text)}
+    .bg button.active{background:var(--accent);color:#fff}
+    .bg button.act-cf{background:var(--cf);color:#fff}
+    .bg button.act-tunnel{background:var(--tunnel);color:#fff}
+    .div{width:1px;height:22px;background:var(--border);margin:0 2px}
 
-    main { padding:20px 24px; max-width:1400px; margin:0 auto; }
+    /* cards */
+    .card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px 18px;margin-bottom:14px}
+    .ch{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:6px}
+    .ct{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+    .leg{display:flex;gap:12px;font-size:12px}
+    .li{display:flex;align-items:center;gap:5px}
+    .ld{width:8px;height:8px;border-radius:50%}
+    #chartbox{position:relative;height:240px}
 
-    #status-bar { display:flex; align-items:center; gap:8px; font-size:11px; color:var(--muted); margin-bottom:16px; }
-    .dot { width:6px; height:6px; border-radius:50%; background:var(--rx); animation:pulse 2s infinite; }
-    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+    /* totals */
+    .tg{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:14px}
+    .tc{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 12px}
+    .tp{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-bottom:4px}
+    .tr{display:flex;justify-content:space-between;align-items:baseline;margin-top:2px}
+    .tl{font-size:11px;color:var(--muted)}
+    .tv{font-size:13px;font-weight:600;font-variant-numeric:tabular-nums}
 
-    /* ── toolbar ── */
-    .toolbar { display:flex; align-items:center; gap:10px; margin-bottom:16px; flex-wrap:wrap; }
-    .label   { font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:.5px; color:var(--muted); white-space:nowrap; }
+    /* tables */
+    table{width:100%;border-collapse:collapse;font-size:13px}
+    thead th{text-align:left;font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);padding:6px 8px;border-bottom:1px solid var(--border);cursor:pointer;user-select:none;white-space:nowrap}
+    thead th:hover{color:var(--text)}
+    thead th.asc::after{content:' ↑'}
+    thead th.desc::after{content:' ↓'}
+    tbody tr{border-bottom:1px solid rgba(48,54,61,.4);transition:background .1s}
+    tbody tr:last-child{border-bottom:none}
+    tbody tr:hover{background:var(--hover)}
+    td{padding:7px 8px;vertical-align:middle}
 
-    .btn-group { display:flex; gap:3px; background:var(--surface); border:1px solid var(--border); border-radius:7px; padding:3px; }
-    .btn-group button {
-      background:transparent; border:none; color:var(--muted); padding:5px 11px;
-      border-radius:5px; cursor:pointer; font-size:12px; font-weight:500; white-space:nowrap; transition:all .12s;
-    }
-    .btn-group button:hover    { background:var(--hover); color:var(--text); }
-    .btn-group button.active   { background:var(--accent); color:#fff; }
-    .btn-group button.cf-active { background:var(--cf); color:#fff; }
+    .hcell{display:flex;flex-direction:column;gap:2px}
+    .hn{font-weight:500;display:flex;align-items:center;gap:5px;flex-wrap:wrap}
+    .ips{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
 
-    .divider { width:1px; height:24px; background:var(--border); margin:0 4px; }
+    /* badges */
+    .badge{display:inline-flex;align-items:center;border-radius:4px;padding:1px 5px;font-size:10px;font-weight:600}
+    .b-port{background:rgba(88,166,255,.15);color:var(--accent);font-variant-numeric:tabular-nums}
+    .b-tcp{background:rgba(63,185,80,.15);color:var(--rx);text-transform:uppercase}
+    .b-udp{background:rgba(248,81,73,.15);color:var(--tx);text-transform:uppercase}
+    .b-cf{background:rgba(246,130,31,.15);color:var(--cf)}
+    .b-cf::before{content:'☁ '}
+    .b-tunnel{background:rgba(163,113,247,.15);color:var(--tunnel)}
 
-    /* ── cards ── */
-    .card        { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:18px 20px; margin-bottom:16px; }
-    .card-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; flex-wrap:wrap; gap:8px; }
-    .card-title  { font-size:11px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.5px; }
+    .bar-cell{display:flex;align-items:center;gap:6px}
+    .bar-bg{flex:1;height:3px;background:var(--border);border-radius:2px;min-width:40px;max-width:90px}
+    .bar-fill{height:100%;border-radius:2px;background:var(--accent)}
+    .bv{font-variant-numeric:tabular-nums;min-width:60px;text-align:right}
 
-    .legend      { display:flex; gap:14px; font-size:12px; }
-    .legend-item { display:flex; align-items:center; gap:5px; }
-    .legend-dot  { width:9px; height:9px; border-radius:50%; }
+    /* container grid */
+    .cgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px}
+    .cc{background:var(--hover);border:1px solid var(--border);border-radius:8px;padding:10px 12px;cursor:pointer;transition:border-color .15s}
+    .cc:hover{border-color:var(--accent)}
+    .cc.sel{border-color:var(--accent);background:rgba(88,166,255,.07)}
+    .cc.cfc{border-color:rgba(246,130,31,.35)}
+    .cc.cfc.sel{border-color:var(--cf);background:rgba(246,130,31,.07)}
+    .cc.off{opacity:.5}
+    .cn{font-weight:600;font-size:13px;margin-bottom:5px;display:flex;align-items:center;gap:5px}
+    .cr{display:flex;gap:8px;font-size:12px;font-variant-numeric:tabular-nums}
 
-    #chart-container { position:relative; height:260px; }
+    /* label editor */
+    .label-wrap{display:inline-flex;align-items:center;gap:4px}
+    .label-tag{background:rgba(88,166,255,.2);color:var(--accent);border-radius:4px;padding:1px 6px;font-size:11px;cursor:pointer}
+    .label-tag:hover{background:rgba(88,166,255,.35)}
+    .label-input{background:var(--hover);border:1px solid var(--accent);border-radius:4px;color:var(--text);font-size:11px;padding:1px 6px;width:120px;outline:none}
 
-    /* ── totals strip ── */
-    .totals-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:10px; margin-bottom:16px; }
-    .total-card  { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:12px 14px; }
-    .total-period { font-size:10px; text-transform:uppercase; letter-spacing:.5px; color:var(--muted); margin-bottom:6px; }
-    .total-row   { display:flex; justify-content:space-between; align-items:baseline; margin-top:3px; }
-    .total-label { font-size:11px; color:var(--muted); }
-    .total-val   { font-size:13px; font-weight:600; font-variant-numeric:tabular-nums; }
-    .total-rx    { color:var(--rx); }
-    .total-tx    { color:var(--tx); }
-
-    /* ── tables ── */
-    table { width:100%; border-collapse:collapse; font-size:13px; }
-    thead th {
-      text-align:left; font-weight:600; font-size:10px; text-transform:uppercase;
-      letter-spacing:.4px; color:var(--muted); padding:7px 10px;
-      border-bottom:1px solid var(--border); cursor:pointer; user-select:none; white-space:nowrap;
-    }
-    thead th:hover { color:var(--text); }
-    thead th.asc::after  { content:' ↑'; }
-    thead th.desc::after { content:' ↓'; }
-    tbody tr { border-bottom:1px solid rgba(48,54,61,.4); transition:background .1s; }
-    tbody tr:last-child  { border-bottom:none; }
-    tbody tr:hover       { background:var(--hover); }
-    td { padding:8px 10px; vertical-align:middle; }
-
-    .host-cell   { display:flex; flex-direction:column; gap:2px; }
-    .hostname    { font-weight:500; display:flex; align-items:center; gap:5px; }
-    .ip-small    { font-size:11px; color:var(--muted); font-variant-numeric:tabular-nums; }
-
-    .badge {
-      display:inline-flex; align-items:center; border-radius:4px;
-      padding:1px 6px; font-size:10px; font-weight:600;
-    }
-    .badge-port  { background:rgba(88,166,255,.15); color:var(--accent); font-variant-numeric:tabular-nums; }
-    .badge-tcp   { background:rgba(63,185,80,.15);  color:var(--rx); text-transform:uppercase; }
-    .badge-udp   { background:rgba(248,81,73,.15);  color:var(--tx); text-transform:uppercase; }
-    .badge-cf    { background:rgba(246,130,31,.15); color:var(--cf); gap:3px; }
-    .badge-cf::before { content:'☁'; }
-
-    .bar-cell  { display:flex; align-items:center; gap:7px; }
-    .bar-bg    { flex:1; height:3px; background:var(--border); border-radius:2px; min-width:50px; max-width:100px; }
-    .bar-fill  { height:100%; border-radius:2px; background:var(--accent); }
-    .bytes-val { font-variant-numeric:tabular-nums; min-width:65px; text-align:right; }
-
-    /* ── containers grid ── */
-    .container-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:10px; }
-    .c-card {
-      background:var(--hover); border:1px solid var(--border); border-radius:8px;
-      padding:12px 14px; cursor:pointer; transition:border-color .15s;
-    }
-    .c-card:hover     { border-color:var(--accent); }
-    .c-card.selected  { border-color:var(--accent); background:rgba(88,166,255,.08); }
-    .c-card.cf-card   { border-color:rgba(246,130,31,.4); }
-    .c-card.cf-card.selected { border-color:var(--cf); background:rgba(246,130,31,.08); }
-    .c-card.inactive  { opacity:.5; }
-    .c-name  { font-weight:600; font-size:13px; margin-bottom:6px; display:flex; align-items:center; gap:6px; }
-    .c-rates { display:flex; gap:10px; font-size:12px; font-variant-numeric:tabular-nums; }
-
-    .empty-state { text-align:center; padding:36px; color:var(--muted); font-size:13px; }
-    .conn-meta   { display:flex; align-items:center; gap:8px; }
-    .conn-count  { font-size:11px; background:var(--hover); color:var(--muted); padding:2px 7px; border-radius:10px; }
+    .empty{text-align:center;padding:32px;color:var(--muted);font-size:13px}
+    .meta{display:flex;align-items:center;gap:8px}
+    .cnt{font-size:11px;background:var(--hover);color:var(--muted);padding:2px 6px;border-radius:10px}
   </style>
 </head>
 <body>
-
 <header>
-  <h1>
-    Network Monitor
-    <span class="version-badge" id="ver">v0.2.0</span>
-  </h1>
+  <h1>Network Monitor <span class="ver" id="ver">v0.3.0</span></h1>
   <div id="live-rates"></div>
 </header>
 
 <main>
-  <div id="status-bar"><div class="dot"></div><span id="status-text">Connecting…</span></div>
+  <div id="sbar"><div class="dot"></div><span id="stxt">Connecting…</span></div>
 
-  <!-- toolbar -->
   <div class="toolbar">
-    <!-- view mode -->
-    <span class="label">View</span>
-    <div class="btn-group" id="view-btns">
+    <span class="lbl">View</span>
+    <div class="bg" id="view-btns">
       <button class="active" data-view="interfaces">Interfaces</button>
       <button data-view="containers">Containers</button>
+      <button data-view="devices">Devices</button>
+      <button data-view="cf_tunnel">CF Tunnel</button>
     </div>
-
-    <div class="divider"></div>
-
-    <!-- interface / container tabs (populated dynamically) -->
-    <span class="label" id="tab-label">Interface</span>
-    <div class="btn-group" id="subject-tabs">
-      <button class="active" data-subject="all">All</button>
-    </div>
-
-    <div class="divider"></div>
-
-    <!-- range -->
-    <span class="label">Range</span>
-    <div class="btn-group" id="range-btns">
+    <div class="div"></div>
+    <span class="lbl" id="tab-lbl">Interface</span>
+    <div class="bg" id="sub-tabs"><button class="active" data-sub="all">All</button></div>
+    <div class="div"></div>
+    <span class="lbl">Range</span>
+    <div class="bg" id="range-btns">
       <button data-range="1h">1h</button>
       <button data-range="6h">6h</button>
       <button class="active" data-range="24h">24h</button>
@@ -174,384 +142,511 @@
   </div>
 
   <!-- period totals -->
-  <div class="totals-grid" id="totals-grid"></div>
+  <div class="tg" id="totals"></div>
 
-  <!-- bandwidth chart -->
-  <div class="card">
-    <div class="card-header">
-      <span class="card-title" id="chart-title">Bandwidth</span>
-      <div class="legend">
-        <div class="legend-item"><div class="legend-dot" style="background:var(--rx)"></div>Download</div>
-        <div class="legend-item"><div class="legend-dot" style="background:var(--tx)"></div>Upload</div>
+  <!-- bandwidth chart (shown for interfaces / containers / devices / cf_tunnel) -->
+  <div class="card" id="chart-card">
+    <div class="ch">
+      <span class="ct" id="chart-lbl">Bandwidth</span>
+      <div class="leg">
+        <div class="li"><div class="ld" style="background:var(--rx)"></div>Download</div>
+        <div class="li"><div class="ld" style="background:var(--tx)"></div>Upload</div>
       </div>
     </div>
-    <div id="chart-container"><canvas id="bwChart"></canvas></div>
+    <div id="chartbox"><canvas id="bwChart"></canvas></div>
   </div>
 
-  <!-- interfaces view: connections table -->
+  <!-- connections table (interfaces + devices views) -->
   <div class="card" id="conn-card">
-    <div class="card-header">
-      <div class="conn-meta">
-        <span class="card-title">Top Destinations</span>
-        <span class="conn-count" id="conn-count">0</span>
+    <div class="ch">
+      <div class="meta"><span class="ct">Top Destinations</span><span class="cnt" id="conn-cnt">0</span></div>
+    </div>
+    <table>
+      <thead><tr>
+        <th data-col="hostname">Host</th>
+        <th data-col="remote_port">Port</th>
+        <th data-col="protocol">Proto</th>
+        <th data-col="total_bytes">Total</th>
+        <th data-col="tx_bytes">↑ Sent</th>
+        <th data-col="rx_bytes">↓ Recv</th>
+        <th data-col="hits">Samples</th>
+      </tr></thead>
+      <tbody id="conn-body"></tbody>
+    </table>
+    <div class="empty" id="conn-empty" style="display:none">No connection data yet.</div>
+  </div>
+
+  <!-- containers grid -->
+  <div class="card" id="cont-card" style="display:none">
+    <div class="ch"><div class="meta"><span class="ct">Docker Containers</span><span class="cnt" id="cont-cnt">0</span></div></div>
+    <div class="cgrid" id="cont-grid"></div>
+    <div class="empty" id="cont-empty" style="display:none">Docker socket not available or no containers running.</div>
+  </div>
+
+  <!-- devices table -->
+  <div class="card" id="dev-card" style="display:none">
+    <div class="ch"><div class="meta"><span class="ct">Devices</span><span class="cnt" id="dev-cnt">0</span></div></div>
+    <table>
+      <thead><tr>
+        <th data-dcol="label">Device</th>
+        <th data-dcol="total_bytes">Total</th>
+        <th data-dcol="tx_bytes">↑ Sent</th>
+        <th data-dcol="rx_bytes">↓ Recv</th>
+        <th data-dcol="last_seen">Last seen</th>
+      </tr></thead>
+      <tbody id="dev-body"></tbody>
+    </table>
+    <div class="empty" id="dev-empty" style="display:none">No device data yet — connections are tracked per 60 s cycle.</div>
+  </div>
+
+  <!-- CF tunnel services table -->
+  <div class="card" id="tun-card" style="display:none">
+    <div class="ch">
+      <div class="meta">
+        <span class="ct">Services via Cloudflare Zero Trust</span>
+        <span class="cnt" id="tun-cnt">0</span>
       </div>
     </div>
     <table>
-      <thead>
-        <tr>
-          <th data-col="hostname">Host</th>
-          <th data-col="remote_port">Port</th>
-          <th data-col="protocol">Proto</th>
-          <th data-col="total_bytes">Total</th>
-          <th data-col="tx_bytes">↑ Sent</th>
-          <th data-col="rx_bytes">↓ Recv</th>
-          <th data-col="hits">Samples</th>
-        </tr>
-      </thead>
-      <tbody id="conn-body"></tbody>
+      <thead><tr>
+        <th data-tcol="hostname">Service</th>
+        <th data-tcol="service_port">Port</th>
+        <th data-tcol="protocol">Proto</th>
+        <th data-tcol="total_bytes">Total</th>
+        <th data-tcol="tx_bytes">→ In</th>
+        <th data-tcol="rx_bytes">← Out</th>
+        <th data-tcol="hits">Samples</th>
+      </tr></thead>
+      <tbody id="tun-body"></tbody>
     </table>
-    <div class="empty-state" id="conn-empty" style="display:none">No connection data yet — check back in a minute.</div>
-  </div>
-
-  <!-- containers view: grid -->
-  <div class="card" id="container-card" style="display:none">
-    <div class="card-header">
-      <div class="conn-meta">
-        <span class="card-title">Docker Containers</span>
-        <span class="conn-count" id="container-count">0</span>
-      </div>
-    </div>
-    <div class="container-grid" id="container-grid"></div>
-    <div class="empty-state" id="container-empty" style="display:none">
-      Docker socket not available or no containers running.
-    </div>
+    <div class="empty" id="tun-empty" style="display:none">No tunnel traffic detected yet. CloudflareTunnel container must be running.</div>
   </div>
 </main>
 
 <script>
-const API = '';
+const API='';
+let view='interfaces', sub='all', range='24h';
+let sortConn='total_bytes', sortConnDir='desc';
+let sortDev='total_bytes',  sortDevDir='desc';
+let sortTun='total_bytes',  sortTunDir='desc';
+let connData=[], devData=[], tunData=[], contData=[];
+let maxBytes=1, labels={};
+let chart=null;
 
-let currentView    = 'interfaces';
-let currentSubject = 'all';   // iface name or container id
-let currentRange   = '24h';
-let sortCol = 'total_bytes', sortDir = 'desc';
-let connData = [], containerData = [], maxBytes = 1;
-let bwChart  = null;
-
-// ── helpers ──────────────────────────────────────────────────────────────────
-
-function fmtBytes(b) {
-  if (!b || b === 0) return '0 B';
-  const u = ['B','KB','MB','GB','TB'];
-  const i = Math.floor(Math.log(b) / Math.log(1024));
-  return (b / Math.pow(1024,i)).toFixed(i===0?0:2) + ' ' + u[i];
-}
-function fmtMbps(mbps) {
-  if (mbps >= 1000) return (mbps/1000).toFixed(2)+' Gbps';
-  if (mbps >= 1)    return mbps.toFixed(2)+' Mbps';
-  return (mbps*1000).toFixed(1)+' Kbps';
-}
-function tsLabel(ts, range) {
-  const d = new Date(ts*1000);
-  if (range === '1h' || range === '6h')
-    return d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'});
-  if (range === '24h')
-    return d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+/* ── utils ─────────────────────────────────────────────────────────────────── */
+const fmtBytes=b=>{
+  if(!b||b===0) return '0 B';
+  const u=['B','KB','MB','GB','TB'],i=Math.floor(Math.log(b)/Math.log(1024));
+  return (b/Math.pow(1024,i)).toFixed(i===0?0:2)+' '+u[i];
+};
+const fmtMbps=m=>{
+  if(m>=1000) return (m/1000).toFixed(2)+' Gbps';
+  if(m>=1)    return m.toFixed(2)+' Mbps';
+  return (m*1000).toFixed(1)+' Kbps';
+};
+const tsLabel=(ts,r)=>{
+  const d=new Date(ts*1000);
+  if(r==='1h'||r==='6h') return d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  if(r==='24h')           return d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
   return d.toLocaleDateString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
-}
-
-const PORT_NAMES = {
-  80:'HTTP',443:'HTTPS',53:'DNS',22:'SSH',25:'SMTP',587:'SMTP',993:'IMAP',
-  143:'IMAP',110:'POP3',3306:'MySQL',5432:'Postgres',6379:'Redis',27017:'Mongo',
+};
+const PORTS={80:'HTTP',443:'HTTPS',53:'DNS',22:'SSH',25:'SMTP',587:'SMTP',993:'IMAP',
+  143:'IMAP',110:'POP3',3306:'MySQL',5432:'PG',6379:'Redis',27017:'Mongo',
   8080:'HTTP-alt',8443:'HTTPS-alt',123:'NTP',21:'FTP',3389:'RDP',5900:'VNC',
   1194:'OpenVPN',51820:'WireGuard',7844:'CF-QUIC',4500:'IPSec',500:'IKE',
   67:'DHCP',68:'DHCP',161:'SNMP',2049:'NFS',139:'SMB',445:'SMB',32400:'Plex',
-};
+  8096:'Jellyfin',6881:'BitTorrent',58846:'Deluge',8888:'Jupyter'};
+const portBadge=p=>`<span class="badge b-port" title="${p}">${PORTS[p]||p}</span>`;
+const protoBadge=p=>`<span class="badge b-${p}">${p}</span>`;
 
-// ── chart ─────────────────────────────────────────────────────────────────────
+/* ── label editor ───────────────────────────────────────────────────────────── */
+async function loadLabels(){ labels=await fetch(`${API}/api/labels`).then(r=>r.json()); }
 
-function initChart() {
-  bwChart = new Chart(document.getElementById('bwChart').getContext('2d'), {
-    type: 'line',
-    data: { labels:[], datasets:[
-      { label:'Download (RX)', data:[], borderColor:'#3fb950', backgroundColor:'rgba(63,185,80,.08)',
-        borderWidth:2, pointRadius:0, fill:true, tension:.3 },
-      { label:'Upload (TX)',   data:[], borderColor:'#f85149', backgroundColor:'rgba(248,81,73,.08)',
-        borderWidth:2, pointRadius:0, fill:true, tension:.3 },
+function labelHtml(ip){
+  const l=labels[ip];
+  if(l) return `<span class="label-tag" onclick="editLabel(event,'${ip}')" title="Click to rename">${l}</span>`;
+  return `<span class="label-tag" onclick="editLabel(event,'${ip}')" style="opacity:.4" title="Click to name this device">+ label</span>`;
+}
+
+function editLabel(e,ip){
+  e.stopPropagation();
+  const tag=e.currentTarget;
+  const inp=document.createElement('input');
+  inp.className='label-input';
+  inp.value=labels[ip]||'';
+  inp.placeholder='Plex, Deluge…';
+  tag.replaceWith(inp);
+  inp.focus(); inp.select();
+  const save=async()=>{
+    const val=inp.value.trim();
+    await fetch(`${API}/api/label`,{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ip,label:val})});
+    labels[ip]=val||undefined;
+    inp.replaceWith(Object.assign(document.createElement('span'),{
+      className:'label-tag', textContent:val||'+ label',
+      onclick:ev=>editLabel(ev,ip)
+    }));
+  };
+  inp.addEventListener('blur',save);
+  inp.addEventListener('keydown',e=>{if(e.key==='Enter')inp.blur();if(e.key==='Escape')inp.replaceWith(tag)});
+}
+
+/* ── chart ──────────────────────────────────────────────────────────────────── */
+function initChart(){
+  chart=new Chart(document.getElementById('bwChart').getContext('2d'),{
+    type:'line',
+    data:{labels:[],datasets:[
+      {label:'Download',data:[],borderColor:'#3fb950',backgroundColor:'rgba(63,185,80,.07)',borderWidth:2,pointRadius:0,fill:true,tension:.3},
+      {label:'Upload',  data:[],borderColor:'#f85149',backgroundColor:'rgba(248,81,73,.07)',borderWidth:2,pointRadius:0,fill:true,tension:.3},
     ]},
     options:{
-      responsive:true, maintainAspectRatio:false, animation:false,
+      responsive:true,maintainAspectRatio:false,animation:false,
       interaction:{mode:'index',intersect:false},
       plugins:{
         legend:{display:false},
-        tooltip:{
-          backgroundColor:'#1f2937', borderColor:'#30363d', borderWidth:1,
-          titleColor:'#8b949e', bodyColor:'#e6edf3',
-          callbacks:{ label: ctx => ` ${ctx.dataset.label}: ${fmtMbps(ctx.raw)}` }
-        }
+        tooltip:{backgroundColor:'#1f2937',borderColor:'#30363d',borderWidth:1,
+          titleColor:'#8b949e',bodyColor:'#e6edf3',
+          callbacks:{label:ctx=>` ${ctx.dataset.label}: ${fmtMbps(ctx.raw)}`}}
       },
       scales:{
-        x:{ ticks:{color:'#8b949e',maxTicksLimit:8,maxRotation:0}, grid:{color:'rgba(48,54,61,.5)'} },
-        y:{ min:0, ticks:{color:'#8b949e', callback:v=>fmtMbps(v)}, grid:{color:'rgba(48,54,61,.5)'} }
+        x:{ticks:{color:'#8b949e',maxTicksLimit:8,maxRotation:0},grid:{color:'rgba(48,54,61,.5)'}},
+        y:{min:0,ticks:{color:'#8b949e',callback:v=>fmtMbps(v)},grid:{color:'rgba(48,54,61,.5)'}}
       }
     }
   });
 }
 
-async function refreshChart() {
-  try {
+async function refreshChart(){
+  try{
     let url;
-    if (currentView === 'interfaces') {
-      const iface = currentSubject === 'all' ? 'bond0' : currentSubject;
-      url = `${API}/api/bandwidth?iface=${iface}&range=${currentRange}`;
-    } else {
-      if (!currentSubject || currentSubject === 'all') return;
-      url = `${API}/api/container_bandwidth?id=${currentSubject}&range=${currentRange}`;
-    }
-    const data = await fetch(url).then(r=>r.json());
-    bwChart.data.labels           = data.map(d=>tsLabel(d.ts, currentRange));
-    bwChart.data.datasets[0].data = data.map(d=>d.rx);
-    bwChart.data.datasets[1].data = data.map(d=>d.tx);
-    bwChart.update('none');
-  } catch(e) { console.error('chart', e); }
+    if(view==='interfaces'){
+      const iface=sub==='all'?'bond0':sub;
+      url=`${API}/api/bandwidth?iface=${iface}&range=${range}`;
+    }else if(view==='containers'){
+      if(!sub||sub==='all') return;
+      url=`${API}/api/container_bandwidth?id=${sub}&range=${range}`;
+    }else if(view==='devices'){
+      if(!sub||sub==='all') return;
+      url=`${API}/api/device_bandwidth?ip=${encodeURIComponent(sub)}&range=${range}`;
+    }else if(view==='cf_tunnel'){
+      url=`${API}/api/cf_tunnel_bandwidth?range=${range}`;
+    }else return;
+    const data=await fetch(url).then(r=>r.json());
+    chart.data.labels           =data.map(d=>tsLabel(d.ts,range));
+    chart.data.datasets[0].data =data.map(d=>d.rx);
+    chart.data.datasets[1].data =data.map(d=>d.tx);
+    chart.update('none');
+  }catch(e){console.error('chart',e)}
 }
 
-// ── totals ────────────────────────────────────────────────────────────────────
-
-async function refreshTotals() {
-  try {
-    const subject = currentView === 'containers' ? 'containers' : 'interfaces';
-    const data    = await fetch(`${API}/api/totals?subject=${subject}`).then(r=>r.json());
-    const grid    = document.getElementById('totals-grid');
-    const labels  = {'1d':'Last 24h','7d':'Last 7d','14d':'Last 14d','30d':'Last 30d'};
-
-    // Find row for current subject (iface or container_id)
-    grid.innerHTML = Object.entries(labels).map(([key, label]) => {
-      const rows  = data[key] || [];
-      const match = currentSubject === 'all'
-        ? rows.reduce((acc,r)=>({ rx_bytes:(acc.rx_bytes||0)+(r.rx_bytes||0), tx_bytes:(acc.tx_bytes||0)+(r.tx_bytes||0) }),{})
-        : rows.find(r => (r.iface||r.container_id) === currentSubject) || {};
-      return `<div class="total-card">
-        <div class="total-period">${label}</div>
-        <div class="total-row">
-          <span class="total-label">↓ Download</span>
-          <span class="total-val total-rx">${fmtBytes(match.rx_bytes||0)}</span>
-        </div>
-        <div class="total-row">
-          <span class="total-label">↑ Upload</span>
-          <span class="total-val total-tx">${fmtBytes(match.tx_bytes||0)}</span>
-        </div>
+/* ── totals ─────────────────────────────────────────────────────────────────── */
+async function refreshTotals(){
+  try{
+    const subject=view==='containers'?'containers':'interfaces';
+    const data=await fetch(`${API}/api/totals?subject=${subject}`).then(r=>r.json());
+    const labels2={'1d':'Last 24h','7d':'Last 7d','14d':'Last 14d','30d':'Last 30d'};
+    document.getElementById('totals').innerHTML=Object.entries(labels2).map(([k,lbl])=>{
+      const rows=data[k]||[];
+      const m=sub==='all'
+        ?rows.reduce((a,r)=>({rx_bytes:(a.rx_bytes||0)+(r.rx_bytes||0),tx_bytes:(a.tx_bytes||0)+(r.tx_bytes||0)}),{})
+        :rows.find(r=>(r.iface||r.container_id)===sub)||{};
+      return `<div class="tc">
+        <div class="tp">${lbl}</div>
+        <div class="tr"><span class="tl">↓ Down</span><span class="tv c-rx">${fmtBytes(m.rx_bytes||0)}</span></div>
+        <div class="tr"><span class="tl">↑ Up</span><span class="tv c-tx">${fmtBytes(m.tx_bytes||0)}</span></div>
       </div>`;
     }).join('');
-  } catch(e) { console.error('totals', e); }
+  }catch(e){console.error('totals',e)}
 }
 
-// ── live rates header ─────────────────────────────────────────────────────────
+/* ── header live rates ───────────────────────────────────────────────────────── */
+async function refreshHeader(){
+  try{
+    const endpoint=view==='containers'?'/api/containers':'/api/interfaces';
+    const data=await fetch(`${API}${endpoint}`).then(r=>r.json());
+    document.getElementById('live-rates').innerHTML=data
+      .filter(x=>(x.rx_mbps||0)>0||(x.tx_mbps||0)>0)
+      .slice(0,8)
+      .map(x=>`<div class="ri">
+        <span class="rl">${x.name||x.id}${x.is_cloudflare?' ☁':''}</span>
+        <span class="rv c-rx">↓ ${fmtMbps(x.rx_mbps||0)}</span>
+        <span class="rv c-tx">↑ ${fmtMbps(x.tx_mbps||0)}</span>
+      </div>`).join('');
+    document.getElementById('stxt').textContent=`Live · ${new Date().toLocaleTimeString()}`;
 
-async function refreshHeader() {
-  try {
-    const data = currentView === 'interfaces'
-      ? await fetch(`${API}/api/interfaces`).then(r=>r.json())
-      : await fetch(`${API}/api/containers`).then(r=>r.json());
-
-    document.getElementById('live-rates').innerHTML = data
-      .filter(x => x.rx_mbps > 0 || x.tx_mbps > 0)
-      .slice(0, 8)
-      .map(x => {
-        const name = x.name || x.id;
-        const cf   = x.is_cloudflare ? ' ☁' : '';
-        return `<div class="rate-item">
-          <span class="rate-label">${name}${cf}</span>
-          <span class="rate-value rate-rx">↓ ${fmtMbps(x.rx_mbps)}</span>
-          <span class="rate-value rate-tx">↑ ${fmtMbps(x.tx_mbps)}</span>
-        </div>`;
-      }).join('');
-
-    document.getElementById('status-text').textContent = `Live · ${new Date().toLocaleTimeString()}`;
-
-    // Populate subject tabs
-    const tabEl   = document.getElementById('subject-tabs');
-    const existing = new Set([...tabEl.querySelectorAll('[data-subject]')].map(b=>b.dataset.subject));
-    data.forEach(x => {
-      const sid = currentView === 'interfaces' ? x.name : x.id;
-      if (!existing.has(sid)) {
-        const btn = document.createElement('button');
-        btn.dataset.subject = sid;
-        btn.textContent = x.name || x.id;
-        if (x.is_cloudflare) btn.style.borderLeft = '2px solid var(--cf)';
-        btn.addEventListener('click', () => setSubject(sid));
-        tabEl.appendChild(btn);
-        existing.add(sid);
-      }
-    });
-  } catch(e) {
-    document.getElementById('status-text').textContent = 'Connection error';
-  }
+    // Populate sub-tabs for interfaces/containers
+    if(view==='interfaces'||view==='containers'){
+      const tabEl=document.getElementById('sub-tabs');
+      const existing=new Set([...tabEl.querySelectorAll('[data-sub]')].map(b=>b.dataset.sub));
+      data.forEach(x=>{
+        const sid=view==='interfaces'?x.name:x.id;
+        if(!existing.has(sid)){
+          const btn=document.createElement('button');
+          btn.dataset.sub=sid; btn.textContent=x.name||x.id;
+          if(x.is_cloudflare) btn.style.borderLeft='2px solid var(--cf)';
+          btn.addEventListener('click',()=>setSub(sid));
+          tabEl.appendChild(btn); existing.add(sid);
+        }
+      });
+    }
+  }catch(e){ document.getElementById('stxt').textContent='Connection error'; }
 }
 
-// ── connections ───────────────────────────────────────────────────────────────
-
-async function refreshConnections() {
-  try {
-    const iface = currentSubject === 'all' ? 'all' : currentSubject;
-    connData    = await fetch(`${API}/api/connections?iface=${iface}&range=${currentRange}`).then(r=>r.json());
-    maxBytes    = Math.max(1, ...connData.map(r=>r.total_bytes));
-    renderConnTable();
-  } catch(e) { console.error('connections', e); }
+/* ── connections ─────────────────────────────────────────────────────────────── */
+async function refreshConnections(){
+  try{
+    let url=`${API}/api/connections?range=${range}`;
+    if(view==='devices'&&sub&&sub!=='all')       url+=`&source=${encodeURIComponent(sub)}`;
+    else if(view==='interfaces'&&sub&&sub!=='all') url+=`&iface=${sub}`;
+    connData=await fetch(url).then(r=>r.json());
+    maxBytes=Math.max(1,...connData.map(r=>r.total_bytes||0));
+    renderConn();
+  }catch(e){console.error('conn',e)}
 }
 
-function renderConnTable() {
-  const dir    = sortDir === 'asc' ? 1 : -1;
-  const sorted = [...connData].sort((a,b) => {
-    const av=a[sortCol]??0, bv=b[sortCol]??0;
-    return typeof av==='string' ? dir*av.localeCompare(bv) : dir*(av-bv);
+function renderConn(){
+  const dir=sortConnDir==='asc'?1:-1;
+  const sorted=[...connData].sort((a,b)=>{
+    const av=a[sortConn]??0,bv=b[sortConn]??0;
+    return typeof av==='string'?dir*av.localeCompare(bv):dir*(av-bv);
   });
-
-  document.querySelectorAll('thead th[data-col]').forEach(th => {
+  document.querySelectorAll('#conn-card thead th[data-col]').forEach(th=>{
     th.classList.remove('asc','desc');
-    if (th.dataset.col === sortCol) th.classList.add(sortDir);
+    if(th.dataset.col===sortConn) th.classList.add(sortConnDir);
   });
-
-  const body  = document.getElementById('conn-body');
-  const empty = document.getElementById('conn-empty');
-  document.getElementById('conn-count').textContent = sorted.length;
-
-  if (!sorted.length) { body.innerHTML=''; empty.style.display='block'; return; }
-  empty.style.display = 'none';
-
-  body.innerHTML = sorted.map(r => {
-    const isIP   = r.hostname === r.remote_ip;
-    const cfBadge = r.is_cloudflare ? '<span class="badge badge-cf">CF</span>' : '';
-    const host   = isIP
-      ? `<div class="host-cell"><span class="hostname ip-small">${r.remote_ip}${cfBadge?'&nbsp;'+cfBadge:''}</span></div>`
-      : `<div class="host-cell"><span class="hostname">${r.hostname} ${cfBadge}</span><span class="ip-small">${r.remote_ip}</span></div>`;
-    const port   = PORT_NAMES[r.remote_port]
-      ? `<span class="badge badge-port" title="${r.remote_port}">${PORT_NAMES[r.remote_port]}</span>`
-      : `<span class="badge badge-port">${r.remote_port}</span>`;
-    const proto  = `<span class="badge badge-${r.protocol}">${r.protocol}</span>`;
-    const pct    = Math.round(r.total_bytes / maxBytes * 100);
-    const bar    = `<div class="bar-bg"><div class="bar-fill" style="width:${pct}%"></div></div>`;
+  document.getElementById('conn-cnt').textContent=sorted.length;
+  const body=document.getElementById('conn-body');
+  const empty=document.getElementById('conn-empty');
+  if(!sorted.length){body.innerHTML='';empty.style.display='block';return}
+  empty.style.display='none';
+  body.innerHTML=sorted.map(r=>{
+    const isIP=r.hostname===r.remote_ip;
+    const disp=r.label||r.hostname||r.remote_ip;
+    const cfB=r.is_cloudflare?'<span class="badge b-cf">CF</span>':'';
+    const host=isIP&&!r.label
+      ?`<div class="hcell"><span class="hn">${r.remote_ip} ${cfB}</span></div>`
+      :`<div class="hcell"><span class="hn">${disp} ${cfB}${labelHtml(r.remote_ip)}</span><span class="ips">${r.remote_ip}</span></div>`;
+    const pct=Math.round((r.total_bytes||0)/maxBytes*100);
     return `<tr>
       <td>${host}</td>
-      <td>${port}</td>
-      <td>${proto}</td>
-      <td><div class="bar-cell">${bar}<span class="bytes-val">${fmtBytes(r.total_bytes)}</span></div></td>
-      <td class="bytes-val">${fmtBytes(r.tx_bytes)}</td>
-      <td class="bytes-val">${fmtBytes(r.rx_bytes)}</td>
+      <td>${portBadge(r.remote_port)}</td>
+      <td>${protoBadge(r.protocol)}</td>
+      <td><div class="bar-cell"><div class="bar-bg"><div class="bar-fill" style="width:${pct}%"></div></div><span class="bv">${fmtBytes(r.total_bytes)}</span></div></td>
+      <td class="bv">${fmtBytes(r.tx_bytes)}</td>
+      <td class="bv">${fmtBytes(r.rx_bytes)}</td>
       <td style="color:var(--muted)">${r.hits}</td>
     </tr>`;
   }).join('');
 }
 
-// ── containers ────────────────────────────────────────────────────────────────
-
-async function refreshContainers() {
-  try {
-    containerData = await fetch(`${API}/api/containers`).then(r=>r.json());
-    renderContainerGrid();
-  } catch(e) { console.error('containers', e); }
+/* ── containers ──────────────────────────────────────────────────────────────── */
+async function refreshContainers(){
+  try{
+    contData=await fetch(`${API}/api/containers`).then(r=>r.json());
+    renderContainers();
+  }catch(e){console.error('cont',e)}
 }
 
-function renderContainerGrid() {
-  const grid  = document.getElementById('container-grid');
-  const empty = document.getElementById('container-empty');
-  document.getElementById('container-count').textContent = containerData.length;
-
-  if (!containerData.length) { grid.innerHTML=''; empty.style.display='block'; return; }
-  empty.style.display = 'none';
-
-  grid.innerHTML = containerData.map(c => {
-    const cfClass  = c.is_cloudflare ? ' cf-card' : '';
-    const selClass = c.id === currentSubject ? ' selected' : '';
-    const inactive = !c.active ? ' inactive' : '';
-    const cfBadge  = c.is_cloudflare ? '<span class="badge badge-cf" style="font-size:9px">CF Tunnel</span>' : '';
-    const status   = c.active
-      ? `<span style="color:var(--rx);font-size:10px">● live</span>`
-      : `<span style="color:var(--muted);font-size:10px">● stopped</span>`;
-    return `<div class="c-card${cfClass}${selClass}${inactive}" data-cid="${c.id}" onclick="setSubject('${c.id}')">
-      <div class="c-name">${c.name} ${cfBadge}</div>
-      <div class="c-rates">
-        <span class="rate-rx">↓ ${fmtMbps(c.rx_mbps)}</span>
-        <span class="rate-tx">↑ ${fmtMbps(c.tx_mbps)}</span>
-        <span style="margin-left:auto">${status}</span>
+function renderContainers(){
+  const grid=document.getElementById('cont-grid');
+  const empty=document.getElementById('cont-empty');
+  document.getElementById('cont-cnt').textContent=contData.length;
+  if(!contData.length){grid.innerHTML='';empty.style.display='block';return}
+  empty.style.display='none';
+  grid.innerHTML=contData.map(c=>`
+    <div class="cc${c.is_cloudflare?' cfc':''}${c.id===sub?' sel':''}${!c.active?' off':''}" onclick="setSub('${c.id}')">
+      <div class="cn">${c.name}${c.is_cloudflare?'<span class="badge b-cf" style="font-size:9px">CF</span>':''}</div>
+      <div class="cr">
+        <span class="c-rx">↓ ${fmtMbps(c.rx_mbps)}</span>
+        <span class="c-tx">↑ ${fmtMbps(c.tx_mbps)}</span>
+        <span style="margin-left:auto;font-size:10px;color:${c.active?'var(--rx)':'var(--muted)'}">● ${c.active?'live':'off'}</span>
       </div>
-    </div>`;
+    </div>`).join('');
+}
+
+/* ── devices ─────────────────────────────────────────────────────────────────── */
+async function refreshDevices(){
+  try{
+    devData=await fetch(`${API}/api/devices?range=${range}`).then(r=>r.json());
+    renderDevices();
+  }catch(e){console.error('dev',e)}
+}
+
+function renderDevices(){
+  const dir=sortDevDir==='asc'?1:-1;
+  const sorted=[...devData].sort((a,b)=>{
+    const av=a[sortDev]??0,bv=b[sortDev]??0;
+    return typeof av==='string'?dir*av.localeCompare(bv):dir*(av-bv);
+  });
+  document.querySelectorAll('#dev-card thead th[data-dcol]').forEach(th=>{
+    th.classList.remove('asc','desc');
+    if(th.dataset.dcol===sortDev) th.classList.add(sortDevDir);
+  });
+  document.getElementById('dev-cnt').textContent=sorted.length;
+  const body=document.getElementById('dev-body');
+  const empty=document.getElementById('dev-empty');
+
+  // Populate sub-tabs for devices
+  if(view==='devices'){
+    const tabEl=document.getElementById('sub-tabs');
+    const existing=new Set([...tabEl.querySelectorAll('[data-sub]')].map(b=>b.dataset.sub));
+    sorted.forEach(d=>{
+      if(!existing.has(d.ip)){
+        const btn=document.createElement('button');
+        btn.dataset.sub=d.ip;
+        btn.textContent=labels[d.ip]||d.hostname||d.ip;
+        btn.addEventListener('click',()=>setSub(d.ip));
+        tabEl.appendChild(btn); existing.add(d.ip);
+      }
+    });
+  }
+
+  if(!sorted.length){body.innerHTML='';empty.style.display='block';return}
+  empty.style.display='none';
+  body.innerHTML=sorted.map(d=>{
+    const disp=labels[d.ip]||d.hostname||d.ip;
+    const isIP=disp===d.ip;
+    const sel=d.ip===sub?'style="background:rgba(88,166,255,.06)"':'';
+    return `<tr ${sel} onclick="setSub('${d.ip}')" style="cursor:pointer">
+      <td><div class="hcell">
+        <span class="hn">${disp}${isIP?'':''} ${labelHtml(d.ip)}</span>
+        ${!isIP?`<span class="ips">${d.ip}</span>`:''}
+      </div></td>
+      <td class="bv">${fmtBytes(d.total_bytes)}</td>
+      <td class="bv">${fmtBytes(d.tx_bytes)}</td>
+      <td class="bv">${fmtBytes(d.rx_bytes)}</td>
+      <td style="color:var(--muted);font-size:12px">${new Date(d.last_seen*1000).toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}</td>
+    </tr>`;
   }).join('');
 }
 
-// ── state setters ─────────────────────────────────────────────────────────────
-
-function setView(view) {
-  currentView    = view;
-  currentSubject = 'all';
-
-  document.querySelectorAll('#view-btns button').forEach(b =>
-    b.classList.toggle('active', b.dataset.view === view));
-
-  // Swap visible panels
-  document.getElementById('conn-card').style.display      = view==='interfaces' ? '' : 'none';
-  document.getElementById('container-card').style.display = view==='containers' ? '' : 'none';
-  document.getElementById('tab-label').textContent        = view==='interfaces' ? 'Interface' : 'Container';
-  document.getElementById('chart-title').textContent      = view==='interfaces' ? 'Bandwidth' : 'Container Bandwidth';
-
-  // Clear tabs and repopulate
-  const tabEl = document.getElementById('subject-tabs');
-  tabEl.innerHTML = '<button class="active" data-subject="all">All</button>';
-  tabEl.querySelector('[data-subject=all]').addEventListener('click', ()=>setSubject('all'));
-
-  refreshAll();
+/* ── CF tunnel ───────────────────────────────────────────────────────────────── */
+async function refreshTunnel(){
+  try{
+    tunData=await fetch(`${API}/api/cf_tunnel?range=${range}`).then(r=>r.json());
+    renderTunnel();
+  }catch(e){console.error('tun',e)}
 }
 
-function setSubject(subject) {
-  currentSubject = subject;
-  document.querySelectorAll('#subject-tabs button').forEach(b =>
-    b.classList.toggle('active', b.dataset.subject === subject));
-  // Highlight cf-active
-  const btn = document.querySelector(`#subject-tabs [data-subject="${subject}"]`);
-  if (btn?.style.borderLeft) btn.classList.add('cf-active');
-
-  renderContainerGrid();
-  refreshAll();
-}
-
-function setRange(range) {
-  currentRange = range;
-  document.querySelectorAll('#range-btns button').forEach(b =>
-    b.classList.toggle('active', b.dataset.range === range));
-  refreshAll();
-}
-
-async function refreshAll() {
-  await Promise.all([
-    refreshHeader(),
-    refreshChart(),
-    refreshTotals(),
-    currentView === 'interfaces' ? refreshConnections() : refreshContainers(),
-  ]);
-}
-
-// ── events ────────────────────────────────────────────────────────────────────
-
-document.getElementById('view-btns').addEventListener('click', e => {
-  if (e.target.matches('button')) setView(e.target.dataset.view);
-});
-document.getElementById('range-btns').addEventListener('click', e => {
-  if (e.target.matches('button')) setRange(e.target.dataset.range);
-});
-document.querySelectorAll('thead th[data-col]').forEach(th => {
-  th.addEventListener('click', () => {
-    sortDir = sortCol===th.dataset.col ? (sortDir==='desc'?'asc':'desc') : 'desc';
-    sortCol = th.dataset.col;
-    renderConnTable();
+function renderTunnel(){
+  const dir=sortTunDir==='asc'?1:-1;
+  const sorted=[...tunData].sort((a,b)=>{
+    const av=a[sortTun]??0,bv=b[sortTun]??0;
+    return dir*(av-bv);
   });
+  document.querySelectorAll('#tun-card thead th[data-tcol]').forEach(th=>{
+    th.classList.remove('asc','desc');
+    if(th.dataset.tcol===sortTun) th.classList.add(sortTunDir);
+  });
+  document.getElementById('tun-cnt').textContent=sorted.length;
+  const body=document.getElementById('tun-body');
+  const empty=document.getElementById('tun-empty');
+  const max=Math.max(1,...sorted.map(r=>r.total_bytes||0));
+  if(!sorted.length){body.innerHTML='';empty.style.display='block';return}
+  empty.style.display='none';
+  body.innerHTML=sorted.map(r=>{
+    const disp=r.label||r.hostname||r.service_ip;
+    const isIP=disp===r.service_ip;
+    const host=isIP
+      ?`<div class="hcell"><span class="hn">${r.service_ip} <span class="badge b-tunnel">local</span>${labelHtml(r.service_ip)}</span></div>`
+      :`<div class="hcell"><span class="hn">${disp} <span class="badge b-tunnel">local</span>${labelHtml(r.service_ip)}</span><span class="ips">${r.service_ip}</span></div>`;
+    const pct=Math.round((r.total_bytes||0)/max*100);
+    return `<tr>
+      <td>${host}</td>
+      <td>${portBadge(r.service_port)}</td>
+      <td>${protoBadge(r.protocol)}</td>
+      <td><div class="bar-cell"><div class="bar-bg"><div class="bar-fill" style="width:${pct}%;background:var(--tunnel)"></div></div><span class="bv">${fmtBytes(r.total_bytes)}</span></div></td>
+      <td class="bv">${fmtBytes(r.tx_bytes)}</td>
+      <td class="bv">${fmtBytes(r.rx_bytes)}</td>
+      <td style="color:var(--muted)">${r.hits}</td>
+    </tr>`;
+  }).join('');
+}
+
+/* ── view switching ──────────────────────────────────────────────────────────── */
+const PANEL_IDS=['conn-card','cont-card','dev-card','tun-card'];
+const VIEW_PANELS={interfaces:'conn-card',containers:'cont-card',devices:['conn-card','dev-card'],cf_tunnel:'tun-card'};
+
+function setView(v){
+  view=v; sub='all';
+  document.querySelectorAll('#view-btns button').forEach(b=>{
+    b.classList.remove('active','act-cf','act-tunnel');
+    if(b.dataset.view===v) b.classList.add(v==='cf_tunnel'?'act-tunnel':v==='containers'?'act-cf':'active');
+  });
+  // Reset sub-tabs
+  const tabEl=document.getElementById('sub-tabs');
+  tabEl.innerHTML='<button class="active" data-sub="all">All</button>';
+  tabEl.querySelector('[data-sub=all]').addEventListener('click',()=>setSub('all'));
+  document.getElementById('tab-lbl').textContent=
+    {interfaces:'Interface',containers:'Container',devices:'Device',cf_tunnel:'Tunnel'}[v]||'';
+
+  // Chart label
+  document.getElementById('chart-lbl').textContent=
+    {interfaces:'Bandwidth',containers:'Container Bandwidth',devices:'Device Traffic',cf_tunnel:'CF Tunnel Traffic'}[v]||'Bandwidth';
+
+  // Show/hide panels
+  PANEL_IDS.forEach(id=>document.getElementById(id).style.display='none');
+  const show=VIEW_PANELS[v];
+  (Array.isArray(show)?show:[show]).forEach(id=>document.getElementById(id).style.display='');
+
+  refreshAll();
+}
+
+function setSub(s){
+  sub=s;
+  document.querySelectorAll('#sub-tabs button').forEach(b=>b.classList.toggle('active',b.dataset.sub===s));
+  if(view==='containers') renderContainers();
+  if(view==='devices')    renderDevices();
+  refreshAll();
+}
+
+function setRange(r){
+  range=r;
+  document.querySelectorAll('#range-btns button').forEach(b=>b.classList.toggle('active',b.dataset.range===r));
+  refreshAll();
+}
+
+async function refreshAll(){
+  const tasks=[refreshHeader(),refreshChart(),refreshTotals()];
+  if(view==='interfaces')  tasks.push(refreshConnections());
+  if(view==='containers')  tasks.push(refreshContainers());
+  if(view==='devices')     tasks.push(refreshDevices(),refreshConnections());
+  if(view==='cf_tunnel')   tasks.push(refreshTunnel());
+  await Promise.all(tasks);
+}
+
+/* ── table sort events ────────────────────────────────────────────────────────── */
+document.getElementById('conn-card').addEventListener('click',e=>{
+  const th=e.target.closest('th[data-col]');
+  if(!th) return;
+  sortConnDir=sortConn===th.dataset.col?(sortConnDir==='desc'?'asc':'desc'):'desc';
+  sortConn=th.dataset.col; renderConn();
+});
+document.getElementById('dev-card').addEventListener('click',e=>{
+  const th=e.target.closest('th[data-dcol]');
+  if(!th) return;
+  sortDevDir=sortDev===th.dataset.dcol?(sortDevDir==='desc'?'asc':'desc'):'desc';
+  sortDev=th.dataset.dcol; renderDevices();
+});
+document.getElementById('tun-card').addEventListener('click',e=>{
+  const th=e.target.closest('th[data-tcol]');
+  if(!th) return;
+  sortTunDir=sortTun===th.dataset.tcol?(sortTunDir==='desc'?'asc':'desc'):'desc';
+  sortTun=th.dataset.tcol; renderTunnel();
 });
 
-// ── boot ──────────────────────────────────────────────────────────────────────
+document.getElementById('view-btns').addEventListener('click',e=>{
+  if(e.target.matches('button')) setView(e.target.dataset.view);
+});
+document.getElementById('range-btns').addEventListener('click',e=>{
+  if(e.target.matches('button')) setRange(e.target.dataset.range);
+});
 
+/* ── boot ────────────────────────────────────────────────────────────────────── */
 initChart();
-refreshAll();
+loadLabels().then(()=>refreshAll());
 setInterval(refreshHeader, 10000);
-setInterval(refreshAll,    30000);
+setInterval(()=>{loadLabels();refreshAll();}, 30000);
 </script>
 </body>
 </html>

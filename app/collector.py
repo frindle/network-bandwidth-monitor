@@ -10,26 +10,69 @@ from apscheduler.schedulers.background import BackgroundScheduler
 import app.database as db
 import app.docker_stats as docker_stats
 
-NET_BASE     = os.environ.get('NET_BASE', '/host/net')
-NET_DEV      = f'{NET_BASE}/dev'
+NET_BASE      = os.environ.get('NET_BASE', '/host/net')
+NET_DEV       = f'{NET_BASE}/dev'
 NET_CONNTRACK = f'{NET_BASE}/nf_conntrack'
-NET_ROUTE    = f'{NET_BASE}/route'
+NET_ROUTE     = f'{NET_BASE}/route'
+
+_CF_CONTAINER = os.environ.get('CF_TUNNEL_CONTAINER', 'CloudflareTunnel')
+
+# Comma-separated interface names to exclude from bandwidth tracking
+_IGNORE_IFACES = set(
+    i.strip() for i in os.environ.get('IGNORE_INTERFACES', '').split(',') if i.strip()
+)
+
+# Parse LOCAL_SUBNET env var (default 10.0.0.0/20)
+_subnet_str, _prefix_str = os.environ.get('LOCAL_SUBNET', '10.0.0.0/20').split('/')
+_local_prefix = int(_prefix_str)
+_local_net    = struct.unpack('>I', socket.inet_aton(_subnet_str))[0]
+_local_mask   = (0xFFFFFFFF << (32 - _local_prefix)) & 0xFFFFFFFF
 
 _lock              = threading.Lock()
-_last_iface_bytes  = {}   # iface -> (rx, tx, ts)
-_last_conn_bytes   = {}   # (proto, src, dst, dport) -> (tx, rx)
-_current_rates     = {}   # iface -> (rx_rate, tx_rate)
+_last_iface_bytes  = {}
+_last_conn_bytes   = {}
+_current_rates     = {}
+_scheduler         = None
 
-_scheduler = None
 
-
-# ── bandwidth ─────────────────────────────────────────────────────────────────
+# ── helpers ────────────────────────────────────────────────────────────────────
 
 def _skip_iface(name: str) -> bool:
-    """Return True for interfaces that are Docker/kernel plumbing, not real traffic."""
+    if name in _IGNORE_IFACES:
+        return True
     skip_prefixes = ('lo', 'veth', 'docker', 'br-', 'shim-', 'tunl0')
     return any(name.startswith(p) for p in skip_prefixes)
 
+
+def _is_local(ip: str) -> bool:
+    try:
+        v = struct.unpack('>I', socket.inet_aton(ip))[0]
+        return (v & _local_mask) == (_local_net & _local_mask)
+    except OSError:
+        return False
+
+
+def _is_external(ip: str) -> bool:
+    """True if ip is not RFC1918, loopback, or link-local."""
+    try:
+        v = struct.unpack('>I', socket.inet_aton(ip))[0]
+    except OSError:
+        return False
+    private = [
+        (0x0A000000, 8),    # 10.0.0.0/8
+        (0xAC100000, 12),   # 172.16.0.0/12
+        (0xC0A80000, 16),   # 192.168.0.0/16
+        (0x7F000000, 8),    # 127.0.0.0/8
+        (0xA9FE0000, 16),   # 169.254.0.0/16
+    ]
+    for net, prefix in private:
+        mask = (0xFFFFFFFF << (32 - prefix)) & 0xFFFFFFFF
+        if (v & mask) == (net & mask):
+            return False
+    return True
+
+
+# ── bandwidth ──────────────────────────────────────────────────────────────────
 
 def _read_iface_bytes() -> dict:
     result = {}
@@ -60,17 +103,16 @@ def collect_bandwidth():
                     rx_rate = max(0, rx - last_rx) / dt
                     tx_rate = max(0, tx - last_tx) / dt
                     samples.append((now, iface, rx_rate, tx_rate))
-                    _current_rates[iface] = (rx_rate, tx_rate)
+                    _current_rates[iface] = {'rx': rx_rate, 'tx': tx_rate}
             _last_iface_bytes[iface] = (rx, tx, now)
 
     if samples:
         db.insert_bw_raw(samples)
 
 
-# ── routing / interface lookup ─────────────────────────────────────────────────
+# ── routing ────────────────────────────────────────────────────────────────────
 
 def _read_routes() -> list:
-    """Return list of (iface, dest_int, mask_int) from /proc/net/route."""
     routes = []
     try:
         with open(NET_ROUTE) as f:
@@ -79,7 +121,6 @@ def _read_routes() -> list:
                 parts = line.split()
                 if len(parts) < 8:
                     continue
-                # values are little-endian hex
                 routes.append((parts[0], int(parts[1], 16), int(parts[7], 16)))
     except OSError:
         pass
@@ -91,24 +132,19 @@ def _iface_for_ip(ip: str, routes: list) -> str:
         ip_int = struct.unpack('>I', socket.inet_aton(ip))[0]
     except OSError:
         return 'unknown'
-
-    best_iface  = 'unknown'
-    best_prefix = -1
+    best, best_prefix = 'unknown', -1
     for iface, dest_le, mask_le in routes:
-        # /proc/net/route stores values little-endian; convert to host order
         dest_n = struct.unpack('>I', struct.pack('<I', dest_le))[0]
         mask_n = struct.unpack('>I', struct.pack('<I', mask_le))[0]
         if (ip_int & mask_n) == (dest_n & mask_n):
-            prefix_len = bin(mask_n).count('1')
-            if prefix_len > best_prefix:
-                best_prefix = prefix_len
-                best_iface  = iface
-    return best_iface
+            prefix = bin(mask_n).count('1')
+            if prefix > best_prefix:
+                best_prefix, best = prefix, iface
+    return best
 
 
-# ── conntrack ─────────────────────────────────────────────────────────────────
+# ── conntrack ──────────────────────────────────────────────────────────────────
 
-# Matches two consecutive src/dst/sport/dport/bytes blocks in a conntrack line.
 _CT_RE = re.compile(
     r'src=(\S+)\s+dst=(\S+)\s+sport=(\d+)\s+dport=(\d+)'
     r'\s+packets=\d+\s+bytes=(\d+)'
@@ -121,31 +157,31 @@ def _parse_ct_line(line: str):
     parts = line.split()
     if len(parts) < 3:
         return None
-    family = parts[0]
-    proto  = parts[2]
+    family, proto = parts[0], parts[2]
     if family not in ('ipv4', 'ipv6') or proto not in ('tcp', 'udp'):
         return None
-
     m = _CT_RE.search(line)
     if not m:
         return None
-
-    src, dst, _sport, dport, orig_bytes, reply_bytes = m.groups()
+    src, dst, _sp, dport, orig_bytes, reply_bytes = m.groups()
     return {
-        'proto':       proto,
-        'local_ip':    src,
-        'remote_ip':   dst,
-        'remote_port': int(dport),
-        'tx_bytes':    int(orig_bytes),
-        'rx_bytes':    int(reply_bytes),
-        'key':         (proto, src, dst, int(dport)),
+        'proto':    proto,
+        'src':      src,
+        'dst':      dst,
+        'dport':    int(dport),
+        'tx_bytes': int(orig_bytes),
+        'rx_bytes': int(reply_bytes),
+        'key':      (proto, src, dst, int(dport)),
     }
 
 
 def collect_connections():
-    now      = int(time.time())
-    hour_ts  = (now // 3600) * 3600
-    routes   = _read_routes()
+    now     = int(time.time())
+    hour_ts = (now // 3600) * 3600
+    routes  = _read_routes()
+
+    # Get CloudflareTunnel container IPs (refresh each cycle in case container restarts)
+    cf_ips = set(docker_stats.get_container_ips(_CF_CONTAINER)) if docker_stats.available() else set()
 
     try:
         with open(NET_CONNTRACK) as f:
@@ -153,8 +189,9 @@ def collect_connections():
     except OSError:
         return
 
-    new_state = {}
-    deltas    = []
+    new_state  = {}
+    conn_deltas = []
+    cf_deltas   = []
 
     with _lock:
         for line in lines:
@@ -167,42 +204,52 @@ def collect_connections():
             new_rx = entry['rx_bytes']
             new_state[key] = (new_tx, new_rx)
 
-            if key in _last_conn_bytes:
-                last_tx, last_rx = _last_conn_bytes[key]
-                tx_delta = max(0, new_tx - last_tx)
-                rx_delta = max(0, new_rx - last_rx)
-                if tx_delta > 0 or rx_delta > 0:
-                    iface = _iface_for_ip(entry['remote_ip'], routes)
-                    deltas.append((
-                        hour_ts, iface, entry['proto'],
-                        entry['remote_ip'], entry['remote_port'],
-                        tx_delta, rx_delta,
-                    ))
+            if key not in _last_conn_bytes:
+                continue  # new connection — seed state, don't inflate first period
+
+            last_tx, last_rx = _last_conn_bytes[key]
+            tx_delta = max(0, new_tx - last_tx)
+            rx_delta = max(0, new_rx - last_rx)
+            if tx_delta == 0 and rx_delta == 0:
+                continue
+
+            src, dst, dport, proto = entry['src'], entry['dst'], entry['dport'], entry['proto']
+
+            if src in cf_ips and not _is_external(dst):
+                # Traffic forwarded by CloudflareTunnel to a local service
+                # (dst may be 10.x, 172.x, or 192.168.x depending on service placement)
+                cf_deltas.append((hour_ts, dst, dport, proto, tx_delta, rx_delta))
+            elif _is_external(dst):
+                # Regular outbound connection from any LAN device
+                iface = _iface_for_ip(dst, routes)
+                conn_deltas.append((hour_ts, iface, src, proto, dst, dport, tx_delta, rx_delta))
 
         _last_conn_bytes.clear()
         _last_conn_bytes.update(new_state)
 
-    for args in deltas:
+    for args in conn_deltas:
         db.upsert_conn_delta(*args)
+    for args in cf_deltas:
+        db.upsert_cf_tunnel(*args)
 
 
 # ── public ─────────────────────────────────────────────────────────────────────
 
 def current_rates() -> dict:
     with _lock:
-        return {iface: {'rx': rx, 'tx': tx} for iface, (rx, tx) in _current_rates.items()}
+        return {iface: dict(v) for iface, v in _current_rates.items()}
 
 
 def start():
     global _scheduler
     db.init_db()
-    collect_bandwidth()   # seed _last_iface_bytes so first real read has a baseline
+    collect_bandwidth()
 
     _scheduler = BackgroundScheduler(daemon=True)
-    _scheduler.add_job(collect_bandwidth,              'interval', seconds=10, id='bw')
-    _scheduler.add_job(collect_connections,            'interval', seconds=60, id='conn')
-    _scheduler.add_job(db.aggregate_hourly,            'interval', hours=1,   id='agg')
+    _scheduler.add_job(collect_bandwidth,   'interval', seconds=10, id='bw')
+    _scheduler.add_job(collect_connections, 'interval', seconds=60, id='conn')
+    _scheduler.add_job(db.aggregate_hourly, 'interval', hours=1,   id='agg')
     if docker_stats.available():
-        docker_stats.collect_docker_stats()   # seed baseline bytes
+        docker_stats.collect_docker_stats()
         _scheduler.add_job(docker_stats.collect_docker_stats, 'interval', seconds=10, id='docker')
     _scheduler.start()

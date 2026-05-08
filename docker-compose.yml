@@ -10,12 +10,10 @@ services:
       - /proc/1/net:/host/net:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - netmon_data:/data
-    environment:
-      - DB_PATH=/data/netmon.db
-      - NET_BASE=/host/net
+    env_file: .env
     networks:
       br0:
-        ipv4_address: 10.0.9.47
+        ipv4_address: ${CONTAINER_IP}
 
 networks:
   br0:

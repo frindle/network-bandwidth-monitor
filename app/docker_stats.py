@@ -102,6 +102,16 @@ def collect_docker_stats():
         db.insert_container_bw_raw(samples)
 
 
+def get_container_ips(name: str) -> list:
+    """Return all IPv4 addresses assigned to a container (by name or id)."""
+    try:
+        info  = _get(f'/containers/{name}/json')
+        nets  = info.get('NetworkSettings', {}).get('Networks', {})
+        return [n['IPAddress'] for n in nets.values() if n.get('IPAddress')]
+    except Exception:
+        return []
+
+
 def available() -> bool:
     return os.path.exists(DOCKER_SOCK)
 
