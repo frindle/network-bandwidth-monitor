@@ -22,8 +22,9 @@ networks:
   netmon_macvlan:
     driver: macvlan
     driver_opts:
-      # Use your Unraid host's physical NIC (eth0, eth1, bond0 — check `ip link`)
-      parent: eth0
+      # br0  = main LAN bridge (Unraid default, shim-br0 lets the host reach this container)
+      # br0.10 = VLAN 10 bridge — use this if 10.0.0.0/20 is on VLAN 10
+      parent: br0
     ipam:
       driver: default
       config:
