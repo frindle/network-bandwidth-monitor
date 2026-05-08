@@ -13,15 +13,11 @@ Docker app for tracking network bandwidth usage and connection destinations over
 
 ## Unraid setup
 
-### 1. Find your NIC name
+### 1. Set the macvlan parent interface
 
-SSH into Unraid and run:
+The `docker-compose.yml` defaults to `parent: br0` (Unraid's main bridge). If your `10.0.0.0/20` network is on **VLAN 10**, change it to `parent: br0.10`.
 
-```bash
-ip link | grep -E '^[0-9]+:' | awk '{print $2}'
-```
-
-Common values: `eth0`, `eth1`, `bond0`. Edit `docker-compose.yml` and set `parent:` to match.
+Unraid creates a `shim-br0` interface automatically, so the host **can** reach the container IP — no workaround needed.
 
 ### 2. Set your gateway
 
@@ -51,7 +47,7 @@ Navigate to `http://10.0.9.47:8080` in your browser.
 ## Notes
 
 - **conntrack availability**: Connection tracking requires the `nf_conntrack` kernel module (loaded automatically by Docker/iptables on Unraid). If the file doesn't exist, bandwidth stats still work fine — the connections panel will just be empty.
-- **macvlan limitation**: The container has its own MAC/IP on your LAN. The Unraid host itself cannot reach the container IP directly (macvlan isolation), but any other device on the network can. Access from Unraid by routing through another machine or use `--network=host` instead (remove the `networks:` section and `ipv4_address`).
+- **macvlan + shim**: Unraid automatically creates a `shim-br0` interface so the host can reach macvlan container IPs directly. No extra configuration needed.
 - **Data location**: SQLite database is in a named Docker volume (`netmon_data`). Back it up with `docker run --rm -v netmon_data:/data -v $(pwd):/out alpine tar czf /out/netmon_backup.tar.gz /data`.
 
 ## Environment variables

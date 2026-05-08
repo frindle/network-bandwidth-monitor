@@ -24,6 +24,12 @@ _scheduler = None
 
 # ── bandwidth ─────────────────────────────────────────────────────────────────
 
+def _skip_iface(name: str) -> bool:
+    """Return True for interfaces that are Docker/kernel plumbing, not real traffic."""
+    skip_prefixes = ('lo', 'veth', 'docker', 'br-', 'shim-', 'tunl0')
+    return any(name.startswith(p) for p in skip_prefixes)
+
+
 def _read_iface_bytes() -> dict:
     result = {}
     try:
@@ -31,7 +37,7 @@ def _read_iface_bytes() -> dict:
             for line in f.readlines()[2:]:
                 parts = line.split()
                 iface = parts[0].rstrip(':')
-                if iface == 'lo':
+                if _skip_iface(iface):
                     continue
                 result[iface] = (int(parts[1]), int(parts[9]))
     except OSError:
