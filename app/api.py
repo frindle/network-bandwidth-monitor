@@ -251,6 +251,38 @@ def get_labels():
     return jsonify(db.get_all_labels())
 
 
+# ── settings ──────────────────────────────────────────────────────────────────
+
+_SETTING_KEYS = ['firewalla_ip', 'firewalla_token', 'local_subnet', 'cf_tunnel_container']
+
+@app.route('/api/settings', methods=['GET'])
+def get_settings():
+    vals = db.get_all_settings(_SETTING_KEYS)
+    # Mask token — send a boolean so UI knows if it's set, not the value
+    if 'firewalla_token' in vals:
+        vals['firewalla_token_set'] = True
+        vals['firewalla_token'] = ''
+    return jsonify(vals)
+
+@app.route('/api/settings', methods=['POST'])
+def save_settings():
+    body = request.get_json(force=True)
+    for key in _SETTING_KEYS:
+        if key in body:
+            val = body[key].strip() if body[key] else None
+            # Don't overwrite token if blank was sent (masked field)
+            if key == 'firewalla_token' and not val:
+                continue
+            db.set_setting(key, val)
+    return jsonify({'ok': True})
+
+@app.route('/api/settings/fw_test')
+def fw_test():
+    import app.firewalla as fw
+    ok, msg = fw.test_connection()
+    return jsonify({'ok': ok, 'message': msg})
+
+
 # ── status ─────────────────────────────────────────────────────────────────────
 
 @app.route('/api/status')

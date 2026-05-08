@@ -93,6 +93,11 @@ def init_db():
                 label      TEXT    NOT NULL,
                 updated_at INTEGER NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS settings (
+                key        TEXT    PRIMARY KEY,
+                value      TEXT    NOT NULL,
+                updated_at INTEGER NOT NULL
+            );
 
             CREATE INDEX IF NOT EXISTS idx_bw_raw_ts       ON bw_raw(ts);
             CREATE INDEX IF NOT EXISTS idx_bw_hourly_ts    ON bw_hourly(hour_ts);
@@ -360,6 +365,34 @@ def set_label(ip: str, label: str):
             )
         else:
             conn.execute("DELETE FROM device_labels WHERE ip=?", (ip,))
+
+
+# ── settings ───────────────────────────────────────────────────────────────────
+
+def get_setting(key: str, default=None):
+    with _db() as conn:
+        row = conn.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
+        return row['value'] if row else default
+
+
+def set_setting(key: str, value: str):
+    with _db() as conn:
+        if value is not None:
+            conn.execute(
+                "INSERT OR REPLACE INTO settings VALUES (?,?,?)",
+                (key, value, int(time.time()))
+            )
+        else:
+            conn.execute("DELETE FROM settings WHERE key=?", (key,))
+
+
+def get_all_settings(keys: list) -> dict:
+    with _db() as conn:
+        rows = conn.execute(
+            f"SELECT key, value FROM settings WHERE key IN ({','.join('?'*len(keys))})",
+            keys
+        ).fetchall()
+        return {r['key']: r['value'] for r in rows}
 
 
 # ── DNS cache ──────────────────────────────────────────────────────────────────
