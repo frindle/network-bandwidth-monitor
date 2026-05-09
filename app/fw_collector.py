@@ -25,10 +25,11 @@ def _sync_devices():
         name        = d.get('name') or d.get('localDomain') or ''
         mac_vendor  = d.get('macVendor') or ''
         last_active = int(d.get('lastActive') or now)
-        # Firewalla group: try common field names
-        tags = d.get('tags') or []
-        group_name  = d.get('group') or (tags[0] if tags else '') or d.get('networkProfileId') or ''
-        db.upsert_fw_device(mac, ip, name, mac_vendor, last_active, group_name)
+        group_name  = d.get('type') or ''  # human-readable: "tv", "tablet", "smart speaker", etc.
+        fs          = d.get('flowsummary') or {}
+        fw_rx_bytes = int(fs.get('inbytes') or 0)
+        fw_tx_bytes = int(fs.get('outbytes') or 0)
+        db.upsert_fw_device(mac, ip, name, mac_vendor, last_active, group_name, fw_rx_bytes, fw_tx_bytes)
 
 
 def poll_once():
