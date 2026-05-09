@@ -131,7 +131,7 @@
 </head>
 <body>
 <header>
-  <h1>Network Monitor <span class="ver" id="ver">v0.4.0</span></h1>
+  <h1>Network Monitor <span class="ver" id="ver">…</span></h1>
   <div id="live-rates"></div>
   <button class="gear-btn" onclick="openSettings()" title="Settings">⚙</button>
 </header>
@@ -821,6 +821,7 @@ async function syncFw(){
 async function checkStatus(){
   try{
     const s=await fetch(`${API}/api/status`).then(r=>r.json());
+    document.getElementById('ver').textContent='v'+s.version;
     if(s.starlink_available){
       const tabEl=document.getElementById('sub-tabs');
       if(!tabEl.querySelector('[data-sub=starlink]')){
