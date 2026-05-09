@@ -484,10 +484,14 @@ async function refreshHeader(){
     if(_starlinkAvail&&view==='interfaces') fetches.push(fetch(`${API}/api/fw_wan_rates`).then(r=>r.json()));
     const [data, wanRates=[]] = await Promise.all(fetches);
 
-    const allItems=[...data, ...wanRates.map(w=>({name:w.name,rx_mbps:w.rx_mbps,tx_mbps:w.tx_mbps}))];
+    // FW WAN first (authoritative), then br0 only from Unraid (bond0 carries same traffic as br0)
+    const wanItems=wanRates.map(w=>({name:w.name,rx_mbps:w.rx_mbps,tx_mbps:w.tx_mbps}));
+    const unraidItems=_starlinkAvail&&view==='interfaces'
+      ? data.filter(x=>x.name==='br0')
+      : data;
+    const allItems=[...wanItems, ...unraidItems];
     document.getElementById('live-rates').innerHTML=allItems
       .filter(x=>(x.rx_mbps||0)>0||(x.tx_mbps||0)>0)
-      .slice(0,8)
       .map(x=>`<div class="ri">
         <span class="rl">${x.name||x.id}${x.is_cloudflare?' ☁':''}</span>
         <span class="rv c-rx">↓ ${fmtMbps(x.rx_mbps||0)}</span>

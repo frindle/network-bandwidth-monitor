@@ -646,6 +646,24 @@ def fw_wan_rates():
     ])
 
 
+@app.route('/api/fw_wan_debug')
+def fw_wan_debug():
+    """Shows latest WAN collector state — use to diagnose Cox WAN = 0."""
+    import time as _t
+    since = int(_t.time()) - 3600
+    with db._db() as conn:
+        rows = conn.execute(
+            "SELECT ts, iface, rx_rate, tx_rate FROM starlink_bw_raw "
+            "WHERE ts>=? ORDER BY ts DESC LIMIT 20", (since,)
+        ).fetchall()
+    return jsonify({
+        'available':     starlink_collector.available(),
+        'last_error':    starlink_collector.last_error(),
+        'current_rates': starlink_collector.current_rates(),
+        'recent_samples': [dict(r) for r in rows],
+    })
+
+
 @app.route('/api/status')
 def status():
     ct = collector.last_collection_times()

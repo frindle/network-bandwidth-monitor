@@ -36,10 +36,14 @@ def _fw_ip() -> str:
     return _setting('firewalla_ssh_ip') or _setting('firewalla_ip')
 
 
+_last_error: str = ''
+
 def _read_wan() -> dict:
     """Returns {iface: (rx_bytes, tx_bytes)} for WAN interfaces, via one SSH call."""
+    global _last_error
     ip = _fw_ip()
     if not ip:
+        _last_error = 'No Firewalla SSH IP configured'
         return {}
     pattern = '|'.join(f'{i}:' for i in _WAN_IFACES)
     try:
@@ -47,6 +51,9 @@ def _read_wan() -> dict:
             ['ssh'] + _SSH_OPTS + [f'pi@{ip}', f'grep -E "{pattern}" /proc/net/dev'],
             capture_output=True, text=True, timeout=8
         )
+        if result.returncode != 0:
+            _last_error = f'SSH exit {result.returncode}: {result.stderr.strip()[:200]}'
+            return {}
         out = {}
         for line in result.stdout.splitlines():
             line = line.strip()
@@ -60,9 +67,18 @@ def _read_wan() -> dict:
             if len(parts) < 9:
                 continue
             out[iface] = (int(parts[0]), int(parts[8]))
+        if not out:
+            _last_error = f'No matching interfaces in output: {result.stdout[:200]}'
+        else:
+            _last_error = ''
         return out
-    except Exception:
+    except Exception as e:
+        _last_error = str(e)
         return {}
+
+
+def last_error() -> str:
+    return _last_error
 
 
 def _sample():
