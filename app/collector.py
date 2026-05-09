@@ -37,7 +37,7 @@ _scheduler         = None
 
 # ── helpers ────────────────────────────────────────────────────────────────────
 
-def _skip_iface(name: str) -> bool:
+def skip_iface(name: str) -> bool:
     if name in _IGNORE_IFACES:
         return True
     skip_prefixes = ('lo', 'veth', 'docker', 'br-', 'shim-', 'tunl0')
@@ -81,7 +81,7 @@ def _read_iface_bytes() -> dict:
             for line in f.readlines()[2:]:
                 parts = line.split()
                 iface = parts[0].rstrip(':')
-                if _skip_iface(iface):
+                if skip_iface(iface):
                     continue
                 result[iface] = (int(parts[1]), int(parts[9]))
     except OSError:
