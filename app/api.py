@@ -10,7 +10,7 @@ import app.fw_collector as fw_collector
 import app.resolver as resolver
 import app.starlink_collector as starlink_collector
 
-VERSION = '0.8.0'
+VERSION = '0.9.0'
 
 app = Flask(__name__)
 
@@ -390,18 +390,31 @@ def fw_debug():
 @app.route('/api/starlink_bandwidth')
 def starlink_bandwidth():
     range_str = request.args.get('range', '24h')
+    iface     = request.args.get('iface') or None
     use_raw   = range_str in ('1h', '6h', '24h')
     if use_raw:
-        rows = db.query_starlink_raw(_since(range_str))
+        rows = db.query_starlink_raw(_since(range_str), iface)
         data = [{'ts': r['ts'],
                  'rx': round(r['rx_rate']*8/1e6, 3),
                  'tx': round(r['tx_rate']*8/1e6, 3)} for r in rows]
     else:
-        rows = db.query_starlink_hourly(_since(range_str))
+        rows = db.query_starlink_hourly(_since(range_str), iface)
         data = [{'ts': r['hour_ts'],
                  'rx': round(r['rx_bytes']*8/3600/1e6, 3),
                  'tx': round(r['tx_bytes']*8/3600/1e6, 3)} for r in rows]
     return jsonify(data)
+
+
+@app.route('/api/fw_wan_rates')
+def fw_wan_rates():
+    rates = starlink_collector.current_rates()
+    return jsonify([
+        {'iface': iface,
+         'name': 'Cox WAN' if iface == 'eth0' else 'Starlink WAN',
+         'rx_mbps': round(v['rx']*8/1e6, 3),
+         'tx_mbps': round(v['tx']*8/1e6, 3)}
+        for iface, v in rates.items()
+    ])
 
 
 @app.route('/api/status')

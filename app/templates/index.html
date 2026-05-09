@@ -157,7 +157,7 @@
     <div class="field">
       <label>Firewalla IP <span style="font-weight:400;text-transform:none;letter-spacing:0">(direct SSH)</span></label>
       <input type="text" id="fw-ssh-ip" placeholder="10.0.0.1" autocomplete="off">
-      <div class="hint">Actual LAN IP of the Firewalla box — used to SSH in and read Starlink WAN (eth3) counters. Leave blank if same as above.</div>
+      <div class="hint">Actual LAN IP of the Firewalla box — used to SSH in and read WAN counters (eth0=Cox, eth3=Starlink). Leave blank if same as above.</div>
     </div>
     <div class="field">
       <label>API Token</label>
@@ -420,8 +420,9 @@ async function refreshChart(){
   try{
     let url;
     if(view==='interfaces'){
-      if(sub==='starlink'){
-        url=`${API}/api/starlink_bandwidth?range=${range}`;
+      if(sub.startsWith('fw_wan_')){
+        const iface=sub.replace('fw_wan_','');
+        url=`${API}/api/starlink_bandwidth?range=${range}&iface=${iface}`;
       } else {
         const iface=sub==='all'?'bond0':sub;
         url=`${API}/api/bandwidth?iface=${iface}&range=${range}`;
@@ -470,8 +471,12 @@ async function refreshTotals(){
 async function refreshHeader(){
   try{
     const endpoint=view==='containers'?'/api/containers':'/api/interfaces';
-    const data=await fetch(`${API}${endpoint}`).then(r=>r.json());
-    document.getElementById('live-rates').innerHTML=data
+    const fetches=[fetch(`${API}${endpoint}`).then(r=>r.json())];
+    if(_starlinkAvail&&view==='interfaces') fetches.push(fetch(`${API}/api/fw_wan_rates`).then(r=>r.json()));
+    const [data, wanRates=[]] = await Promise.all(fetches);
+
+    const allItems=[...data, ...wanRates.map(w=>({name:w.name,rx_mbps:w.rx_mbps,tx_mbps:w.tx_mbps}))];
+    document.getElementById('live-rates').innerHTML=allItems
       .filter(x=>(x.rx_mbps||0)>0||(x.tx_mbps||0)>0)
       .slice(0,8)
       .map(x=>`<div class="ri">
@@ -496,7 +501,7 @@ async function refreshConnections(){
   try{
     let url=`${API}/api/connections?range=${range}`;
     if(view==='devices'&&_selectedDevice)          url+=`&source=${encodeURIComponent(_selectedDevice)}`;
-    else if(view==='interfaces'&&sub&&sub!=='all') url+=`&iface=${sub}`;
+    else if(view==='interfaces'&&sub&&sub!=='all'&&!sub.startsWith('fw_wan_')) url+=`&iface=${sub}`;
     connData=await fetch(url).then(r=>r.json());
     maxBytes=Math.max(1,...connData.map(r=>r.total_bytes||0));
     renderConn();
@@ -685,7 +690,10 @@ function setView(v){
   // Reset sub-select; hide for views that don't need it
   const selEl=document.getElementById('sub-select');
   selEl.innerHTML='<option value="all">All</option>';
-  if(v==='interfaces'&&_starlinkAvail) addSubOption('starlink','Starlink WAN');
+  if(v==='interfaces'&&_starlinkAvail){
+    addSubOption('fw_wan_eth0','Cox WAN');
+    addSubOption('fw_wan_eth3','Starlink WAN');
+  }
   const showSub = v==='interfaces'||v==='containers';
   document.getElementById('tab-lbl').style.display=showSub?'':'none';
   selEl.style.display=showSub?'':'none';
@@ -859,7 +867,10 @@ async function checkStatus(){
     document.getElementById('ver').textContent='v'+s.version;
     if(s.starlink_available){
       _starlinkAvail=true;
-      if(view==='interfaces') addSubOption('starlink','Starlink WAN');
+      if(view==='interfaces'){
+        addSubOption('fw_wan_eth0','Cox WAN');
+        addSubOption('fw_wan_eth3','Starlink WAN');
+      }
     }
     // Stale collection warning (>5 min since last bandwidth sample)
     const staleMins=Math.round((s.ts-(s.last_bw_ts||0))/60);
