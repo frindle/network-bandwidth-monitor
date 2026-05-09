@@ -706,9 +706,10 @@ function setSub(s){
 }
 
 function selectDevice(ip){
-  _selectedDevice=ip;
+  _selectedDevice = _selectedDevice===ip ? null : ip; // toggle off if clicking same row
   renderDevices();
   refreshChart();
+  refreshConnections();
 }
 
 function setRange(r){
