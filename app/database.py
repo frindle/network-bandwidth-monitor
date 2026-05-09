@@ -126,6 +126,19 @@ def init_db():
                 updated_at  INTEGER NOT NULL DEFAULT 0
             );
 
+            CREATE TABLE IF NOT EXISTS fw_conn_hourly (
+                hour_ts     INTEGER NOT NULL,
+                source_ip   TEXT    NOT NULL DEFAULT '',
+                remote_ip   TEXT    NOT NULL,
+                domain      TEXT    NOT NULL DEFAULT '',
+                protocol    TEXT    NOT NULL DEFAULT 'tcp',
+                remote_port INTEGER NOT NULL DEFAULT 0,
+                tx_bytes    INTEGER NOT NULL DEFAULT 0,
+                rx_bytes    INTEGER NOT NULL DEFAULT 0,
+                hit_count   INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (hour_ts, source_ip, remote_ip, protocol, remote_port)
+            );
+
             CREATE INDEX IF NOT EXISTS idx_bw_raw_ts       ON bw_raw(ts);
             CREATE INDEX IF NOT EXISTS idx_bw_hourly_ts    ON bw_hourly(hour_ts);
             CREATE INDEX IF NOT EXISTS idx_conn_ht_ts      ON conn_hourly(hour_ts);
@@ -133,6 +146,8 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_fw_devices_ip   ON fw_devices(ip);
             CREATE INDEX IF NOT EXISTS idx_cbw_raw_ts      ON container_bw_raw(ts);
             CREATE INDEX IF NOT EXISTS idx_cbw_hourly_ts   ON container_bw_hourly(hour_ts);
+            CREATE INDEX IF NOT EXISTS idx_fw_conn_ts      ON fw_conn_hourly(hour_ts);
+            CREATE INDEX IF NOT EXISTS idx_fw_conn_src     ON fw_conn_hourly(source_ip);
         """)
     _migrate()
     # idx_conn_source requires source_ip which may not exist until after _migrate runs
@@ -217,6 +232,25 @@ def _migrate():
             conn.execute("ALTER TABLE fw_devices ADD COLUMN fw_rx_bytes INTEGER NOT NULL DEFAULT 0")
         if 'fw_tx_bytes' not in fw_cols:
             conn.execute("ALTER TABLE fw_devices ADD COLUMN fw_tx_bytes INTEGER NOT NULL DEFAULT 0")
+
+        # v0.9 → v0.10: add fw_conn_hourly table
+        if 'fw_conn_hourly' not in tables:
+            conn.executescript("""
+                CREATE TABLE IF NOT EXISTS fw_conn_hourly (
+                    hour_ts     INTEGER NOT NULL,
+                    source_ip   TEXT    NOT NULL DEFAULT '',
+                    remote_ip   TEXT    NOT NULL,
+                    domain      TEXT    NOT NULL DEFAULT '',
+                    protocol    TEXT    NOT NULL DEFAULT 'tcp',
+                    remote_port INTEGER NOT NULL DEFAULT 0,
+                    tx_bytes    INTEGER NOT NULL DEFAULT 0,
+                    rx_bytes    INTEGER NOT NULL DEFAULT 0,
+                    hit_count   INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY (hour_ts, source_ip, remote_ip, protocol, remote_port)
+                );
+                CREATE INDEX IF NOT EXISTS idx_fw_conn_ts  ON fw_conn_hourly(hour_ts);
+                CREATE INDEX IF NOT EXISTS idx_fw_conn_src ON fw_conn_hourly(source_ip);
+            """)
 
         cols = {r[1] for r in conn.execute("PRAGMA table_info(conn_hourly)").fetchall()}
         if 'source_ip' not in cols:
@@ -564,6 +598,57 @@ def query_starlink_hourly(since: int, iface: str | None = None):
             "SELECT hour_ts, iface, rx_bytes, tx_bytes FROM starlink_bw_hourly WHERE hour_ts>=? ORDER BY hour_ts",
             (since,)
         ).fetchall()
+
+
+# ── Firewalla connections ─────────────────────────────────────────────────────
+
+def upsert_fw_conn(hour_ts: int, source_ip: str, remote_ip: str, domain: str,
+                   protocol: str, remote_port: int, tx_bytes: int, rx_bytes: int):
+    with _db() as conn:
+        conn.execute("""
+            INSERT INTO fw_conn_hourly
+                (hour_ts, source_ip, remote_ip, domain, protocol, remote_port,
+                 tx_bytes, rx_bytes, hit_count)
+            VALUES (?,?,?,?,?,?,?,?,1)
+            ON CONFLICT(hour_ts, source_ip, remote_ip, protocol, remote_port) DO UPDATE SET
+                domain=CASE WHEN excluded.domain!='' THEN excluded.domain ELSE fw_conn_hourly.domain END,
+                tx_bytes=fw_conn_hourly.tx_bytes+excluded.tx_bytes,
+                rx_bytes=fw_conn_hourly.rx_bytes+excluded.rx_bytes,
+                hit_count=fw_conn_hourly.hit_count+1
+        """, (hour_ts, source_ip, remote_ip, domain, protocol, remote_port,
+              tx_bytes, rx_bytes))
+
+
+def query_fw_connections(since_hour: int, source_ip: str | None = None,
+                         limit: int = 500) -> list:
+    with _db() as conn:
+        if source_ip:
+            return conn.execute("""
+                SELECT remote_ip, domain, protocol, remote_port,
+                       SUM(tx_bytes) AS tx_bytes, SUM(rx_bytes) AS rx_bytes,
+                       SUM(tx_bytes+rx_bytes) AS total_bytes, SUM(hit_count) AS hit_count
+                FROM fw_conn_hourly
+                WHERE hour_ts>=? AND source_ip=?
+                GROUP BY remote_ip, protocol, remote_port
+                ORDER BY total_bytes DESC LIMIT ?
+            """, (since_hour, source_ip, limit)).fetchall()
+        return conn.execute("""
+            SELECT remote_ip, domain, protocol, remote_port,
+                   SUM(tx_bytes) AS tx_bytes, SUM(rx_bytes) AS rx_bytes,
+                   SUM(tx_bytes+rx_bytes) AS total_bytes, SUM(hit_count) AS hit_count
+            FROM fw_conn_hourly
+            WHERE hour_ts>=?
+            GROUP BY remote_ip, protocol, remote_port
+            ORDER BY total_bytes DESC LIMIT ?
+        """, (since_hour, limit)).fetchall()
+
+
+def has_fw_connections(since_hour: int) -> bool:
+    with _db() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM fw_conn_hourly WHERE hour_ts>=? LIMIT 1", (since_hour,)
+        ).fetchone()
+        return row is not None
 
 
 # ── Firewalla devices ─────────────────────────────────────────────────────────

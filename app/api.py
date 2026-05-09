@@ -7,10 +7,12 @@ import app.collector as collector
 import app.database as db
 import app.docker_stats as docker_stats
 import app.fw_collector as fw_collector
+import app.fw_flows_collector as fw_flows_collector
+import app.firewalla as firewalla
 import app.resolver as resolver
 import app.starlink_collector as starlink_collector
 
-VERSION = '0.9.0'
+VERSION = '0.10.0'
 
 app = Flask(__name__)
 
@@ -259,29 +261,57 @@ def connections():
     iface     = request.args.get('iface', 'all')
     source_ip = request.args.get('source') or None
     range_str = request.args.get('range', '24h')
-    rows      = db.query_connections(iface, _since_hour(range_str), source_ip=source_ip)
+    since     = _since_hour(range_str)
     labels    = db.get_all_labels()
     result    = []
-    for r in rows:
-        hostname = db.get_dns(r['remote_ip']) or r['remote_ip']
-        result.append({
-            'remote_ip':     r['remote_ip'],
-            'hostname':      hostname,
-            'label':         labels.get(r['remote_ip']),
-            'service':       _detect_service(hostname),
-            'remote_port':   r['remote_port'],
-            'protocol':      r['protocol'],
-            'tx_bytes':      r['tx_bytes'],
-            'rx_bytes':      r['rx_bytes'],
-            'total_bytes':   r['total_bytes'],
-            'hits':          r['hit_count'],
-            'is_cloudflare': cloudflare.is_cloudflare(r['remote_ip']),
-        })
+
+    # Use Firewalla flow data (all LAN devices) when available; fall back to conntrack
+    use_fw = firewalla.available() and db.has_fw_connections(since)
+    if use_fw:
+        rows = db.query_fw_connections(since, source_ip=source_ip)
+        for r in rows:
+            ip       = r['remote_ip']
+            # Prefer domain name captured by Firewalla, then reverse DNS, then IP
+            hostname = r['domain'] or db.get_dns(ip) or ip
+            svc      = _detect_service(r['domain'] or hostname)
+            result.append({
+                'remote_ip':     ip,
+                'hostname':      hostname,
+                'label':         labels.get(ip),
+                'service':       svc,
+                'remote_port':   r['remote_port'],
+                'protocol':      r['protocol'],
+                'tx_bytes':      r['tx_bytes'],
+                'rx_bytes':      r['rx_bytes'],
+                'total_bytes':   r['total_bytes'],
+                'hits':          r['hit_count'],
+                'is_cloudflare': cloudflare.is_cloudflare(ip),
+                'source':        'fw',
+            })
+    else:
+        rows = db.query_connections(iface, since, source_ip=source_ip)
+        for r in rows:
+            hostname = db.get_dns(r['remote_ip']) or r['remote_ip']
+            result.append({
+                'remote_ip':     r['remote_ip'],
+                'hostname':      hostname,
+                'label':         labels.get(r['remote_ip']),
+                'service':       _detect_service(hostname),
+                'remote_port':   r['remote_port'],
+                'protocol':      r['protocol'],
+                'tx_bytes':      r['tx_bytes'],
+                'rx_bytes':      r['rx_bytes'],
+                'total_bytes':   r['total_bytes'],
+                'hits':          r['hit_count'],
+                'is_cloudflare': cloudflare.is_cloudflare(r['remote_ip']),
+                'source':        'conntrack',
+            })
+
     ips   = [r['remote_ip'] for r in rows[:50]]
     stale = db.stale_ips(ips)
     if stale:
         resolver.resolve_batch_async(stale)
-    return jsonify(result)
+    return jsonify({'data': result, 'source': 'fw' if use_fw else 'conntrack'})
 
 
 # ── devices ────────────────────────────────────────────────────────────────────
@@ -632,6 +662,7 @@ def version_check():
 
 collector.start()
 fw_collector.start()
+fw_flows_collector.start()
 starlink_collector.start()
 
 if __name__ == '__main__':
