@@ -126,10 +126,14 @@ def devices():
     range_str = request.args.get('range', '24h')
     rows      = db.query_devices(_since_hour(range_str))
     labels    = db.get_all_labels()
+    fw_all    = {d['ip']: d for d in db.get_all_fw_devices() if d['ip']}
     result    = []
+    seen_ips  = set()
+
     for r in rows:
         ip      = r['source_ip']
-        fw_info = db.get_fw_device_by_ip(ip)
+        seen_ips.add(ip)
+        fw_info = fw_all.get(ip)
         result.append({
             'ip':          ip,
             'hostname':    db.get_dns(ip) or ip,
@@ -143,6 +147,25 @@ def devices():
             'hits':        r['hit_count'],
             'last_seen':   r['last_seen'],
         })
+
+    # Include Firewalla-known devices that have no conntrack traffic yet
+    for ip, fw in fw_all.items():
+        if ip in seen_ips:
+            continue
+        result.append({
+            'ip':          ip,
+            'hostname':    db.get_dns(ip) or ip,
+            'label':       labels.get(ip),
+            'fw_name':     fw['name'] or None,
+            'fw_mac':      fw['mac'],
+            'fw_vendor':   fw['mac_vendor'] or None,
+            'tx_bytes':    0,
+            'rx_bytes':    0,
+            'total_bytes': 0,
+            'hits':        0,
+            'last_seen':   fw['last_active'],
+        })
+
     ips   = [r['source_ip'] for r in rows[:50]]
     stale = db.stale_ips(ips)
     if stale:
