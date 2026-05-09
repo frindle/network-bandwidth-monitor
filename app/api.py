@@ -10,7 +10,7 @@ import app.fw_collector as fw_collector
 import app.resolver as resolver
 import app.starlink_collector as starlink_collector
 
-VERSION = '0.6.0'
+VERSION = '0.7.0'
 
 app = Flask(__name__)
 
@@ -142,6 +142,8 @@ def devices():
             'fw_mac':      fw_info['mac']        if fw_info else None,
             'fw_vendor':   fw_info['mac_vendor'] if fw_info else None,
             'fw_group':    fw_info['group_name'] if fw_info else None,
+            'fw_rx_bytes': fw_info['fw_rx_bytes'] if fw_info else 0,
+            'fw_tx_bytes': fw_info['fw_tx_bytes'] if fw_info else 0,
             'tx_bytes':    r['tx_bytes'],
             'rx_bytes':    r['rx_bytes'],
             'total_bytes': r['total_bytes'],
@@ -161,6 +163,8 @@ def devices():
             'fw_mac':      fw['mac'],
             'fw_vendor':   fw['mac_vendor'] or None,
             'fw_group':    fw['group_name'] or None,
+            'fw_rx_bytes': fw['fw_rx_bytes'],
+            'fw_tx_bytes': fw['fw_tx_bytes'],
             'tx_bytes':    0,
             'rx_bytes':    0,
             'total_bytes': 0,
@@ -254,18 +258,26 @@ def container_purge():
     db.purge_container(cid)
     return jsonify({'ok': True})
 
+@app.route('/api/container_purge_inactive', methods=['POST'])
+def container_purge_inactive():
+    active_ids = list(collector.current_rates().keys()) if False else []
+    import app.docker_stats as ds
+    active_ids = list(ds.current_rates().keys())
+    db.purge_all_inactive_containers(active_ids)
+    return jsonify({'ok': True})
+
 @app.route('/api/container_bandwidth')
 def container_bandwidth():
-    cid       = request.args.get('id', '')
+    name      = request.args.get('name') or request.args.get('id', '')
     range_str = request.args.get('range', '24h')
     use_raw   = range_str in ('1h', '6h', '24h')
     if use_raw:
-        rows = db.query_container_bw_raw(cid, _since(range_str))
+        rows = db.query_container_bw_raw(name, _since(range_str))
         data = [{'ts': r['ts'],
                  'rx': round(r['rx_rate']*8/1e6, 3),
                  'tx': round(r['tx_rate']*8/1e6, 3)} for r in rows]
     else:
-        rows = db.query_container_bw_hourly(cid, _since(range_str))
+        rows = db.query_container_bw_hourly(name, _since(range_str))
         data = [{'ts': r['hour_ts'],
                  'rx': round(r['rx_bytes']*8/3600/1e6, 3),
                  'tx': round(r['tx_bytes']*8/3600/1e6, 3)} for r in rows]

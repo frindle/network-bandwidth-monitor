@@ -257,7 +257,10 @@
 
   <!-- containers table -->
   <div class="card" id="cont-card" style="display:none">
-    <div class="ch"><div class="meta"><span class="ct">Docker Containers</span><span class="cnt" id="cont-cnt">0</span></div></div>
+    <div class="ch">
+      <div class="meta"><span class="ct">Docker Containers</span><span class="cnt" id="cont-cnt">0</span></div>
+      <button class="btn btn-secondary" style="font-size:11px;padding:4px 10px" onclick="purgeAllInactive()" title="Remove all rebuilt/stopped container history">Purge inactive</button>
+    </div>
     <table>
       <thead><tr>
         <th>Container</th>
@@ -426,7 +429,7 @@ async function refreshChart(){
       }
     }else if(view==='containers'){
       if(!sub||sub==='all') return;
-      url=`${API}/api/container_bandwidth?id=${sub}&range=${range}`;
+      url=`${API}/api/container_bandwidth?name=${encodeURIComponent(sub)}&range=${range}`;
     }else if(view==='devices'){
       if(!_selectedDevice) return;
       url=`${API}/api/device_bandwidth?ip=${encodeURIComponent(_selectedDevice)}&range=${range}`;
@@ -451,7 +454,7 @@ async function refreshTotals(){
       const rows=data[k]||[];
       const m=sub==='all'
         ?rows.reduce((a,r)=>({rx_bytes:(a.rx_bytes||0)+(r.rx_bytes||0),tx_bytes:(a.tx_bytes||0)+(r.tx_bytes||0)}),{})
-        :rows.find(r=>(r.iface||r.container_id)===sub)||{};
+        :rows.find(r=>(r.iface||r.container_name)===sub)||{};
       return `<div class="tc">
         <div class="tp">${lbl}</div>
         <div class="tr"><span class="tl">↓ Down</span><span class="tv c-rx">${fmtBytes(m.rx_bytes||0)}</span></div>
@@ -479,8 +482,8 @@ async function refreshHeader(){
     // Populate sub-select for interfaces/containers
     if(view==='interfaces'||view==='containers'){
       data.filter(x=>x.active!==false).forEach(x=>{
-        const sid=view==='interfaces'?x.name:x.id;
-        addSubOption(sid, x.name||x.id);
+        const sid=x.name||x.id;
+        addSubOption(sid, sid);
       });
     }
   }catch(e){ document.getElementById('stxt').textContent='Connection error'; }
@@ -548,13 +551,13 @@ function renderContainers(){
   if(!contData.length){body.innerHTML='';empty.style.display='block';return}
   empty.style.display='none';
   body.innerHTML=contData.map(c=>{
-    const sel=c.id===sub?'style="background:rgba(88,166,255,.06)"':'';
+    const sel=(c.name||c.id)===sub?'style="background:rgba(88,166,255,.06)"':'';
     const dimmed=!c.active?'style="opacity:.5"':'';
     const cfBadge=c.is_cloudflare?'<span class="badge b-cf" style="font-size:9px;margin-left:4px">CF</span>':'';
     const removeBtn=!c.active
       ?`<td style="text-align:right"><span style="cursor:pointer;color:var(--muted);font-size:12px" title="Remove from history" onclick="event.stopPropagation();purgeContainer('${c.id}','${c.name}')">✕</span></td>`
       :'<td></td>';
-    return `<tr ${sel} ${dimmed} onclick="setSub('${c.id}')" style="cursor:pointer">
+    return `<tr ${sel} ${dimmed} onclick="setSub('${c.name||c.id}')" style="cursor:pointer">
       <td><span class="live-dot ${c.active?'on':'off'}"></span>${c.name}${cfBadge}</td>
       <td class="bv" style="text-align:right;color:var(--rx)">${fmtMbps(c.rx_mbps)}</td>
       <td class="bv" style="text-align:right;color:var(--tx)">${fmtMbps(c.tx_mbps)}</td>
@@ -594,15 +597,21 @@ function renderDevices(){
     const sub2=d.fw_vendor&&!labels[d.ip]?`<span class="fw-vendor">${d.fw_vendor}</span>`:'';
     const groupBadge=d.fw_group?`<span class="b-group">${d.fw_group}</span>`:'';
     const rowSel=d.ip===_selectedDevice?'style="background:rgba(88,166,255,.06)"':'';
+    // Use Firewalla flowsummary bytes for devices with no conntrack data
+    const useFw = !d.total_bytes && (d.fw_rx_bytes||d.fw_tx_bytes);
+    const dispRx   = useFw ? d.fw_rx_bytes  : d.rx_bytes;
+    const dispTx   = useFw ? d.fw_tx_bytes  : d.tx_bytes;
+    const dispTotal= useFw ? (d.fw_rx_bytes+d.fw_tx_bytes) : d.total_bytes;
+    const fwNote   = useFw ? '<span style="font-size:9px;color:var(--muted);margin-left:3px">FW</span>' : '';
     return `<tr ${rowSel} onclick="selectDevice('${d.ip}')" style="cursor:pointer">
       <td><div class="hcell">
         <span class="hn">${disp} ${labelHtml(d.ip)}</span>
         <span class="ips">${d.ip}${d.fw_mac?` · ${d.fw_mac}`:''}${sub2?' · ':''} ${sub2}</span>
       </div></td>
       <td>${groupBadge}</td>
-      <td class="bv">${fmtBytes(d.total_bytes)}</td>
-      <td class="bv">${fmtBytes(d.tx_bytes)}</td>
-      <td class="bv">${fmtBytes(d.rx_bytes)}</td>
+      <td class="bv">${fmtBytes(dispTotal)}${fwNote}</td>
+      <td class="bv">${fmtBytes(dispTx)}</td>
+      <td class="bv">${fmtBytes(dispRx)}</td>
       <td style="color:var(--muted);font-size:12px">${new Date(d.last_seen*1000).toLocaleString([],{year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}</td>
     </tr>`;
   }).join('');
@@ -805,6 +814,12 @@ async function purgeContainer(id, name){
   if(!confirm(`Remove "${name}" history from database?`)) return;
   await fetch(`${API}/api/container_purge`,{method:'POST',
     headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});
+  await refreshContainers();
+}
+
+async function purgeAllInactive(){
+  if(!confirm('Remove all inactive/rebuilt container history?')) return;
+  await fetch(`${API}/api/container_purge_inactive`,{method:'POST'});
   await refreshContainers();
 }
 

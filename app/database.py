@@ -111,11 +111,13 @@ def init_db():
                 peak_tx_rate REAL    NOT NULL DEFAULT 0
             );
             CREATE TABLE IF NOT EXISTS fw_devices (
-                mac        TEXT    PRIMARY KEY,
-                ip         TEXT    NOT NULL DEFAULT '',
-                name       TEXT    NOT NULL DEFAULT '',
-                mac_vendor TEXT    NOT NULL DEFAULT '',
-                group_name TEXT    NOT NULL DEFAULT '',
+                mac         TEXT    PRIMARY KEY,
+                ip          TEXT    NOT NULL DEFAULT '',
+                name        TEXT    NOT NULL DEFAULT '',
+                mac_vendor  TEXT    NOT NULL DEFAULT '',
+                group_name  TEXT    NOT NULL DEFAULT '',
+                fw_rx_bytes INTEGER NOT NULL DEFAULT 0,
+                fw_tx_bytes INTEGER NOT NULL DEFAULT 0,
                 last_active INTEGER NOT NULL DEFAULT 0,
                 updated_at  INTEGER NOT NULL DEFAULT 0
             );
@@ -170,10 +172,14 @@ def _migrate():
                 CREATE INDEX IF NOT EXISTS idx_fw_devices_ip ON fw_devices(ip);
             """)
 
-        # v0.5 → v0.6: add group_name to fw_devices
+        # v0.5 → v0.6: add group_name, fw_rx_bytes, fw_tx_bytes to fw_devices
         fw_cols = {r[1] for r in conn.execute("PRAGMA table_info(fw_devices)").fetchall()}
         if 'group_name' not in fw_cols:
             conn.execute("ALTER TABLE fw_devices ADD COLUMN group_name TEXT NOT NULL DEFAULT ''")
+        if 'fw_rx_bytes' not in fw_cols:
+            conn.execute("ALTER TABLE fw_devices ADD COLUMN fw_rx_bytes INTEGER NOT NULL DEFAULT 0")
+        if 'fw_tx_bytes' not in fw_cols:
+            conn.execute("ALTER TABLE fw_devices ADD COLUMN fw_tx_bytes INTEGER NOT NULL DEFAULT 0")
 
         cols = {r[1] for r in conn.execute("PRAGMA table_info(conn_hourly)").fetchall()}
         if 'source_ip' not in cols:
@@ -369,21 +375,22 @@ def insert_container_bw_raw(samples):
         )
 
 
-def query_container_bw_raw(container_id, since):
+def query_container_bw_raw(container_name, since):
     with _db() as conn:
         return conn.execute(
             "SELECT ts, rx_rate, tx_rate FROM container_bw_raw "
-            "WHERE container_id=? AND ts>=? ORDER BY ts",
-            (container_id, since)
+            "WHERE container_name=? AND ts>=? ORDER BY ts",
+            (container_name, since)
         ).fetchall()
 
 
-def query_container_bw_hourly(container_id, since):
+def query_container_bw_hourly(container_name, since):
     with _db() as conn:
         return conn.execute(
-            "SELECT hour_ts, rx_bytes, tx_bytes FROM container_bw_hourly "
-            "WHERE container_id=? AND hour_ts>=? ORDER BY hour_ts",
-            (container_id, since)
+            "SELECT hour_ts, SUM(rx_bytes) AS rx_bytes, SUM(tx_bytes) AS tx_bytes "
+            "FROM container_bw_hourly "
+            "WHERE container_name=? AND hour_ts>=? GROUP BY hour_ts ORDER BY hour_ts",
+            (container_name, since)
         ).fetchall()
 
 
@@ -396,23 +403,48 @@ def purge_container(container_id: str):
 def known_containers():
     with _db() as conn:
         rows = conn.execute("""
-            SELECT container_id, container_name FROM container_bw_raw
-            GROUP BY container_id HAVING MAX(ts) > ?
-            UNION
-            SELECT container_id, container_name FROM container_bw_hourly
+            SELECT container_id, container_name, MAX(ts) AS last_ts
+            FROM container_bw_raw WHERE ts > ?
             GROUP BY container_id
+            UNION
+            SELECT container_id, container_name, MAX(hour_ts) AS last_ts
+            FROM container_bw_hourly
+            GROUP BY container_id
+            ORDER BY last_ts DESC
         """, (int(time.time()) - 7 * 86400,)).fetchall()
-        return [{'id': r['container_id'], 'name': r['container_name']} for r in rows]
+        # Keep only the most recent container ID per name to avoid rebuild duplicates
+        seen = set()
+        result = []
+        for r in rows:
+            n = r['container_name']
+            if n not in seen:
+                seen.add(n)
+                result.append({'id': r['container_id'], 'name': n})
+        return result
+
+
+def purge_all_inactive_containers(active_ids: list):
+    """Delete history for every container ID not currently running and not the most recent per name."""
+    known = known_containers()
+    keep = set(active_ids) | {c['id'] for c in known}
+    with _db() as conn:
+        all_ids = {r[0] for r in conn.execute(
+            "SELECT DISTINCT container_id FROM container_bw_raw "
+            "UNION SELECT DISTINCT container_id FROM container_bw_hourly"
+        ).fetchall()}
+        for cid in all_ids - keep:
+            conn.execute("DELETE FROM container_bw_raw WHERE container_id=?", (cid,))
+            conn.execute("DELETE FROM container_bw_hourly WHERE container_id=?", (cid,))
 
 
 def query_totals_by_container(since_hour):
     with _db() as conn:
         return conn.execute("""
-            SELECT container_id, container_name,
+            SELECT container_name,
                    SUM(rx_bytes) AS rx_bytes, SUM(tx_bytes) AS tx_bytes,
                    SUM(rx_bytes + tx_bytes) AS total_bytes
             FROM container_bw_hourly WHERE hour_ts>=?
-            GROUP BY container_id ORDER BY total_bytes DESC
+            GROUP BY container_name ORDER BY total_bytes DESC
         """, (since_hour,)).fetchall()
 
 
@@ -489,24 +521,29 @@ def query_starlink_hourly(since: int):
 
 # ── Firewalla devices ─────────────────────────────────────────────────────────
 
-def upsert_fw_device(mac: str, ip: str, name: str, mac_vendor: str, last_active: int, group_name: str = ''):
+def upsert_fw_device(mac: str, ip: str, name: str, mac_vendor: str, last_active: int,
+                     group_name: str = '', fw_rx_bytes: int = 0, fw_tx_bytes: int = 0):
     with _db() as conn:
         conn.execute("""
-            INSERT INTO fw_devices (mac, ip, name, mac_vendor, group_name, last_active, updated_at)
-            VALUES (?,?,?,?,?,?,?)
+            INSERT INTO fw_devices
+                (mac, ip, name, mac_vendor, group_name, fw_rx_bytes, fw_tx_bytes, last_active, updated_at)
+            VALUES (?,?,?,?,?,?,?,?,?)
             ON CONFLICT(mac) DO UPDATE SET
                 ip=excluded.ip, name=excluded.name,
                 mac_vendor=excluded.mac_vendor,
                 group_name=excluded.group_name,
+                fw_rx_bytes=excluded.fw_rx_bytes,
+                fw_tx_bytes=excluded.fw_tx_bytes,
                 last_active=excluded.last_active,
                 updated_at=excluded.updated_at
-        """, (mac, ip, name, mac_vendor, group_name, last_active, int(time.time())))
+        """, (mac, ip, name, mac_vendor, group_name, fw_rx_bytes, fw_tx_bytes, last_active, int(time.time())))
 
 
 def get_fw_device_by_ip(ip: str) -> dict | None:
     with _db() as conn:
         row = conn.execute(
-            "SELECT mac, ip, name, mac_vendor, group_name, last_active FROM fw_devices WHERE ip=?", (ip,)
+            "SELECT mac, ip, name, mac_vendor, group_name, fw_rx_bytes, fw_tx_bytes, last_active "
+            "FROM fw_devices WHERE ip=?", (ip,)
         ).fetchone()
         return dict(row) if row else None
 
@@ -514,7 +551,8 @@ def get_fw_device_by_ip(ip: str) -> dict | None:
 def get_all_fw_devices() -> list:
     with _db() as conn:
         rows = conn.execute(
-            "SELECT mac, ip, name, mac_vendor, group_name, last_active FROM fw_devices ORDER BY group_name, name"
+            "SELECT mac, ip, name, mac_vendor, group_name, fw_rx_bytes, fw_tx_bytes, last_active "
+            "FROM fw_devices ORDER BY group_name, name"
         ).fetchall()
         return [dict(r) for r in rows]
 
