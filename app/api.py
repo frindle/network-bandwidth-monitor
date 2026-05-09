@@ -219,6 +219,14 @@ def containers():
     return jsonify(result)
 
 
+@app.route('/api/container_purge', methods=['POST'])
+def container_purge():
+    cid = request.get_json(force=True).get('id', '').strip()
+    if not cid:
+        return jsonify({'error': 'id required'}), 400
+    db.purge_container(cid)
+    return jsonify({'ok': True})
+
 @app.route('/api/container_bandwidth')
 def container_bandwidth():
     cid       = request.args.get('id', '')

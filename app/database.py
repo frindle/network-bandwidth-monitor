@@ -351,6 +351,12 @@ def query_container_bw_hourly(container_id, since):
         ).fetchall()
 
 
+def purge_container(container_id: str):
+    with _db() as conn:
+        conn.execute("DELETE FROM container_bw_raw WHERE container_id=?", (container_id,))
+        conn.execute("DELETE FROM container_bw_hourly WHERE container_id=?", (container_id,))
+
+
 def known_containers():
     with _db() as conn:
         rows = conn.execute("""

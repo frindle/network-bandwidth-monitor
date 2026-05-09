@@ -58,7 +58,7 @@
     /* toolbar */
     .toolbar{display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap}
     .lbl{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);white-space:nowrap}
-    .bg{display:flex;gap:3px;background:var(--surface);border:1px solid var(--border);border-radius:7px;padding:3px}
+    .bg{display:flex;gap:3px;background:var(--surface);border:1px solid var(--border);border-radius:7px;padding:3px;flex-wrap:wrap}
     .bg button{background:transparent;border:none;color:var(--muted);padding:5px 10px;border-radius:5px;cursor:pointer;font-size:12px;font-weight:500;white-space:nowrap;transition:all .12s}
     .bg button:hover{background:var(--hover);color:var(--text)}
     .bg button.active{background:var(--accent);color:#fff}
@@ -533,7 +533,9 @@ function renderContainers(){
   empty.style.display='none';
   grid.innerHTML=contData.map(c=>`
     <div class="cc${c.is_cloudflare?' cfc':''}${c.id===sub?' sel':''}${!c.active?' off':''}" onclick="setSub('${c.id}')">
-      <div class="cn">${c.name}${c.is_cloudflare?'<span class="badge b-cf" style="font-size:9px">CF</span>':''}</div>
+      <div class="cn">${c.name}${c.is_cloudflare?'<span class="badge b-cf" style="font-size:9px">CF</span>':''}
+        ${!c.active?`<span style="margin-left:auto;font-size:10px;cursor:pointer;color:var(--muted)" title="Remove from history" onclick="event.stopPropagation();purgeContainer('${c.id}','${c.name}')">✕</span>`:''}
+      </div>
       <div class="cr">
         <span class="c-rx">↓ ${fmtMbps(c.rx_mbps)}</span>
         <span class="c-tx">↑ ${fmtMbps(c.tx_mbps)}</span>
@@ -778,6 +780,13 @@ async function testFw(){
   el.className='test-result '+(res.ok?'test-ok':'test-fail');
   el.textContent=res.message;
   btn.disabled=false; btn.textContent='Test Connection';
+}
+
+async function purgeContainer(id, name){
+  if(!confirm(`Remove "${name}" history from database?`)) return;
+  await fetch(`${API}/api/container_purge`,{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});
+  await refreshContainers();
 }
 
 async function syncFw(){
