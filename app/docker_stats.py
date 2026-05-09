@@ -116,6 +116,12 @@ def available() -> bool:
     return os.path.exists(DOCKER_SOCK)
 
 
+def list_running() -> dict:
+    """Returns {container_id: name} for all containers currently running in Docker."""
+    containers = _list_containers()
+    return {c['id']: c['name'] for c in containers}
+
+
 def current_rates() -> dict:
     with _lock:
         return dict(_current_rates)

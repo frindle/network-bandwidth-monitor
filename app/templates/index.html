@@ -146,19 +146,19 @@
 
     <div class="section-divider">Firewalla Integration</div>
     <div class="field">
-      <label>Firewalla IP</label>
-      <input type="text" id="fw-ip" placeholder="10.0.0.1" autocomplete="off">
-      <div class="hint">LAN IP of your Firewalla Gold Plus box</div>
+      <label>Unraid IP <span style="font-weight:400;text-transform:none;letter-spacing:0">(API endpoint)</span></label>
+      <input type="text" id="fw-ip" placeholder="10.0.6.180" autocomplete="off">
+      <div class="hint">IP where the Firewalla API is reachable — your Unraid IP if using an SSH tunnel, or the Firewalla's own IP for direct access.</div>
     </div>
     <div class="field">
       <label>API Port</label>
-      <input type="text" id="fw-port" placeholder="8834" autocomplete="off" style="width:100px">
-      <div class="hint">Default 8834 (local). Use 18834 if tunnelling via SSH or proxy.</div>
+      <input type="text" id="fw-port" placeholder="18834" autocomplete="off" style="width:100px">
+      <div class="hint">18834 if tunnelling via SSH on Unraid; 8834 for direct Firewalla access.</div>
     </div>
     <div class="field">
-      <label>Firewalla Direct IP <span style="font-weight:400;text-transform:none;letter-spacing:0">(for Starlink SSH)</span></label>
+      <label>Firewalla IP <span style="font-weight:400;text-transform:none;letter-spacing:0">(direct SSH)</span></label>
       <input type="text" id="fw-ssh-ip" placeholder="10.0.0.1" autocomplete="off">
-      <div class="hint">Actual LAN IP of the Firewalla box — only needed if API IP above is a proxy/tunnel address. Used to SSH in and read Starlink WAN counters.</div>
+      <div class="hint">Actual LAN IP of the Firewalla box — used to SSH in and read Starlink WAN (eth3) counters. Leave blank if same as above.</div>
     </div>
     <div class="field">
       <label>API Token</label>

@@ -229,23 +229,35 @@ def cf_tunnel_bandwidth():
 
 @app.route('/api/containers')
 def containers():
-    rates  = docker_stats.current_rates()
-    known  = db.known_containers()
-    seen   = set()
+    running = docker_stats.list_running()   # {id: name} — Docker-reported running containers
+    rates   = docker_stats.current_rates()  # {id: {name,rx,tx}} — live bandwidth (may lag 1 cycle)
+    known   = db.known_containers()         # [{id,name}] — historical, deduped by name
+
+    seen_names = set()
     result = []
-    for cid, info in rates.items():
-        seen.add(cid)
-        result.append({'id': cid, 'name': info['name'],
-                        'rx_mbps': round(info['rx']*8/1e6, 3),
-                        'tx_mbps': round(info['tx']*8/1e6, 3),
-                        'is_cloudflare': 'cloudflare' in info['name'].lower(),
+
+    # Active: whatever Docker says is currently running
+    for cid, name in running.items():
+        if name in seen_names:
+            continue
+        seen_names.add(name)
+        r = rates.get(cid, {})
+        result.append({'id': cid, 'name': name,
+                        'rx_mbps': round(r.get('rx', 0)*8/1e6, 3),
+                        'tx_mbps': round(r.get('tx', 0)*8/1e6, 3),
+                        'is_cloudflare': 'cloudflare' in name.lower(),
                         'active': True})
+
+    # Inactive: in DB history but not currently running in Docker
     for c in known:
-        if c['id'] not in seen:
-            result.append({'id': c['id'], 'name': c['name'],
-                            'rx_mbps': 0, 'tx_mbps': 0,
-                            'is_cloudflare': 'cloudflare' in c['name'].lower(),
-                            'active': False})
+        if c['name'] in seen_names:
+            continue
+        seen_names.add(c['name'])
+        result.append({'id': c['id'], 'name': c['name'],
+                        'rx_mbps': 0, 'tx_mbps': 0,
+                        'is_cloudflare': 'cloudflare' in c['name'].lower(),
+                        'active': False})
+
     result.sort(key=lambda x: (not x['active'], x['name']))
     return jsonify(result)
 
