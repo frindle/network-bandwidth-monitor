@@ -127,13 +127,64 @@ _SERVICE_PATTERNS = [
     ('b-cdn.net',             'BunnyCDN'),
 ]
 
+_CDN_FRAGMENTS = ('akamai', 'cloudfront', 'fastly', 'edgekey', 'edgesuite',
+                   'akamaitechnologies', 'akamaihd', 'akamaized',
+                   'llnwd', 'llnwd.net', 'cdn77', 'b-cdn.net')
+
+# Services that route through CDNs — match on the subdomain prefix before .cdn-domain.com
+_CDN_SERVICE_HINTS = [
+    ('netflix',    'Netflix'),
+    ('nflx',       'Netflix'),
+    ('hulu',       'Hulu'),
+    ('twitch',     'Twitch'),
+    ('twitchsvc',  'Twitch'),
+    ('jtvnw',      'Twitch'),
+    ('disney',     'Disney+'),
+    ('bamgrid',    'Disney+'),
+    ('hbo',        'HBO/Max'),
+    ('spotify',    'Spotify'),
+    ('scdn',       'Spotify'),
+    ('apple',      'Apple'),
+    ('icloud',     'Apple iCloud'),
+    ('steam',      'Steam'),
+    ('valve',      'Steam'),
+    ('youtube',    'YouTube'),
+    ('googlevideo','YouTube'),
+    ('ytimg',      'YouTube'),
+    ('xbox',       'Xbox'),
+    ('xboxlive',   'Xbox Live'),
+    ('playstation','PlayStation'),
+    ('sonyentertainment', 'PlayStation'),
+    ('paramount',  'Paramount+'),
+    ('peacock',    'Peacock'),
+    ('slack',      'Slack'),
+    ('zoom',       'Zoom'),
+    ('discord',    'Discord'),
+    ('github',     'GitHub'),
+    ('dropbox',    'Dropbox'),
+    ('plex',       'Plex'),
+    ('reddit',     'Reddit'),
+    ('fbcdn',      'Facebook'),
+    ('instagram',  'Instagram'),
+    ('twitter',    'Twitter/X'),
+    ('microsoft',  'Microsoft'),
+    ('office',     'Microsoft 365'),
+]
+
 def _detect_service(hostname: str) -> str | None:
     if not hostname:
         return None
     h = hostname.lower()
+    # Direct domain match first
     for frag, name in _SERVICE_PATTERNS:
         if frag in h:
             return name
+    # For CDN hostnames, look for service hints in the subdomain parts
+    is_cdn = any(cdn in h for cdn in _CDN_FRAGMENTS)
+    if is_cdn:
+        for hint, name in _CDN_SERVICE_HINTS:
+            if hint in h:
+                return f'{name} (via CDN)'
     return None
 
 
@@ -505,6 +556,17 @@ def fw_debug():
     import app.firewalla as fw
     devices = fw.get_devices()
     return jsonify(devices[:3])
+
+
+@app.route('/api/fw_flows_debug')
+def fw_flows_debug():
+    """Returns raw Firewalla flow records from the past hour — use to inspect field names."""
+    import app.firewalla as fw
+    import time as _time
+    end   = int(_time.time())
+    begin = end - 3600
+    flows = fw.get_flows(begin, end, count=10)
+    return jsonify({'count': len(flows), 'sample': flows[:5]})
 
 
 # ── status ─────────────────────────────────────────────────────────────────────
