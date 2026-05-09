@@ -398,8 +398,12 @@ async function refreshChart(){
   try{
     let url;
     if(view==='interfaces'){
-      const iface=sub==='all'?'bond0':sub;
-      url=`${API}/api/bandwidth?iface=${iface}&range=${range}`;
+      if(sub==='starlink'){
+        url=`${API}/api/starlink_bandwidth?range=${range}`;
+      } else {
+        const iface=sub==='all'?'bond0':sub;
+        url=`${API}/api/bandwidth?iface=${iface}&range=${range}`;
+      }
     }else if(view==='containers'){
       if(!sub||sub==='all') return;
       url=`${API}/api/container_bandwidth?id=${sub}&range=${range}`;
@@ -810,8 +814,25 @@ async function syncFw(){
 }
 
 /* ── boot ────────────────────────────────────────────────────────────────────── */
+async function checkStatus(){
+  try{
+    const s=await fetch(`${API}/api/status`).then(r=>r.json());
+    if(s.starlink_available){
+      const tabEl=document.getElementById('sub-tabs');
+      if(!tabEl.querySelector('[data-sub=starlink]')){
+        const btn=document.createElement('button');
+        btn.dataset.sub='starlink';
+        btn.textContent='Starlink WAN';
+        btn.style.borderLeft='2px solid #4ade80';
+        btn.addEventListener('click',()=>setSub('starlink'));
+        tabEl.appendChild(btn);
+      }
+    }
+  }catch(e){}
+}
+
 initChart();
-loadLabels().then(()=>refreshAll());
+loadLabels().then(()=>{ checkStatus(); refreshAll(); });
 setInterval(refreshHeader, 10000);
 setInterval(()=>{loadLabels();refreshAll();}, 30000);
 </script>

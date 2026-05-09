@@ -8,8 +8,9 @@ import app.database as db
 import app.docker_stats as docker_stats
 import app.fw_collector as fw_collector
 import app.resolver as resolver
+import app.starlink_collector as starlink_collector
 
-VERSION = '0.4.0'
+VERSION = '0.5.0'
 
 app = Flask(__name__)
 
@@ -325,11 +326,29 @@ def fw_devices_list():
 
 # ── status ─────────────────────────────────────────────────────────────────────
 
+@app.route('/api/starlink_bandwidth')
+def starlink_bandwidth():
+    range_str = request.args.get('range', '24h')
+    use_raw   = range_str in ('1h', '6h', '24h')
+    if use_raw:
+        rows = db.query_starlink_raw(_since(range_str))
+        data = [{'ts': r['ts'],
+                 'rx': round(r['rx_rate']*8/1e6, 3),
+                 'tx': round(r['tx_rate']*8/1e6, 3)} for r in rows]
+    else:
+        rows = db.query_starlink_hourly(_since(range_str))
+        data = [{'ts': r['hour_ts'],
+                 'rx': round(r['rx_bytes']*8/3600/1e6, 3),
+                 'tx': round(r['tx_bytes']*8/3600/1e6, 3)} for r in rows]
+    return jsonify(data)
+
+
 @app.route('/api/status')
 def status():
     return jsonify({
         'ok': True, 'version': VERSION, 'ts': int(time.time()),
         'docker_available': docker_stats.available(),
+        'starlink_available': starlink_collector.available(),
     })
 
 
@@ -337,6 +356,7 @@ def status():
 
 collector.start()
 fw_collector.start()
+starlink_collector.start()
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080, debug=False)
