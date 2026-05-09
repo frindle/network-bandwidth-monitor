@@ -109,6 +109,7 @@
     .b-tunnel{background:rgba(163,113,247,.15);color:var(--tunnel)}
     .b-fw{background:rgba(88,166,255,.1);color:var(--accent);font-size:9px}
     .b-group{background:rgba(163,113,247,.12);color:var(--tunnel);font-size:9px;border-radius:4px;padding:1px 5px;font-weight:600}
+    .b-svc{background:rgba(56,189,248,.12);color:#38bdf8;font-size:9px;margin-left:3px}
     .fw-vendor{font-size:10px;color:var(--muted);font-style:italic}
 
     .bar-cell{display:flex;align-items:center;gap:6px}
@@ -129,6 +130,7 @@
     .empty{text-align:center;padding:32px;color:var(--muted);font-size:13px}
     .meta{display:flex;align-items:center;gap:8px}
     .cnt{font-size:11px;background:var(--hover);color:var(--muted);padding:2px 6px;border-radius:10px}
+    #conn-expand span{cursor:pointer;text-decoration:underline;margin:0 4px}
   </style>
 </head>
 <body>
@@ -252,6 +254,7 @@
       <tbody id="conn-body"></tbody>
     </table>
     <div class="empty" id="conn-empty" style="display:none">No connection data yet.</div>
+    <div id="conn-expand" style="display:none;text-align:center;padding:8px 0;font-size:12px;color:var(--accent)"></div>
   </div>
 
   <!-- containers table -->
@@ -262,9 +265,10 @@
     </div>
     <table>
       <thead><tr>
-        <th>Container</th>
-        <th style="text-align:right">↓ Download</th>
-        <th style="text-align:right">↑ Upload</th>
+        <th data-ccol="name">Container</th>
+        <th data-ccol="total_bytes" style="text-align:right">24h Total</th>
+        <th data-ccol="rx_mbps" style="text-align:right">↓ Live</th>
+        <th data-ccol="tx_mbps" style="text-align:right">↑ Live</th>
         <th style="width:24px"></th>
       </tr></thead>
       <tbody id="cont-body"></tbody>
@@ -319,11 +323,13 @@ let view='interfaces', sub='all', range='24h';
 let sortConn='total_bytes', sortConnDir='desc';
 let sortDev='fw_group',     sortDevDir='asc';
 let sortTun='total_bytes',  sortTunDir='desc';
+let sortCont='total_bytes', sortContDir='desc';
 let connData=[], devData=[], tunData=[], contData=[];
 let maxBytes=1, labels={};
 let chart=null;
 let _starlinkAvail=false;
 let _selectedDevice=null;
+let _connLimit=10;
 
 function addSubOption(value,text){
   const sel=document.getElementById('sub-select');
@@ -503,6 +509,7 @@ async function refreshConnections(){
     if(view==='devices'&&_selectedDevice)          url+=`&source=${encodeURIComponent(_selectedDevice)}`;
     else if(view==='interfaces'&&sub&&sub!=='all'&&!sub.startsWith('fw_wan_')) url+=`&iface=${sub}`;
     connData=await fetch(url).then(r=>r.json());
+    _connLimit=10;
     maxBytes=Math.max(1,...connData.map(r=>r.total_bytes||0));
     renderConn();
   }catch(e){console.error('conn',e)}
@@ -518,18 +525,22 @@ function renderConn(){
     th.classList.remove('asc','desc');
     if(th.dataset.col===sortConn) th.classList.add(sortConnDir);
   });
-  document.getElementById('conn-cnt').textContent=sorted.length;
+  const total=sorted.length;
+  const limit=_connLimit===Infinity?total:Math.min(_connLimit,total);
+  document.getElementById('conn-cnt').textContent=limit<total?`${limit} of ${total}`:total;
   const body=document.getElementById('conn-body');
   const empty=document.getElementById('conn-empty');
-  if(!sorted.length){body.innerHTML='';empty.style.display='block';return}
+  if(!total){body.innerHTML='';empty.style.display='block';
+    document.getElementById('conn-expand').style.display='none'; return}
   empty.style.display='none';
-  body.innerHTML=sorted.map(r=>{
+  body.innerHTML=sorted.slice(0,limit).map(r=>{
     const isIP=r.hostname===r.remote_ip;
     const disp=r.label||r.hostname||r.remote_ip;
     const cfB=r.is_cloudflare?'<span class="badge b-cf">CF</span>':'';
+    const svcB=r.service?`<span class="badge b-svc">${r.service}</span>`:'';
     const host=isIP&&!r.label
-      ?`<div class="hcell"><span class="hn">${r.remote_ip} ${cfB}</span></div>`
-      :`<div class="hcell"><span class="hn">${disp} ${cfB}${labelHtml(r.remote_ip)}</span><span class="ips">${r.remote_ip}</span></div>`;
+      ?`<div class="hcell"><span class="hn">${r.remote_ip} ${cfB}${svcB}</span></div>`
+      :`<div class="hcell"><span class="hn">${disp} ${cfB}${svcB}${labelHtml(r.remote_ip)}</span><span class="ips">${r.remote_ip}</span></div>`;
     const pct=Math.round((r.total_bytes||0)/maxBytes*100);
     return `<tr>
       <td>${host}</td>
@@ -541,6 +552,18 @@ function renderConn(){
       <td style="color:var(--muted)">${r.hits}</td>
     </tr>`;
   }).join('');
+  const expEl=document.getElementById('conn-expand');
+  if(total>10){
+    expEl.style.display='';
+    if(_connLimit===Infinity)
+      expEl.innerHTML=`<span onclick="_connLimit=10;renderConn()">Show less</span>`;
+    else if(_connLimit<total)
+      expEl.innerHTML=`<span onclick="_connLimit=Infinity;renderConn()">Show all ${total}</span> · <span onclick="_connLimit=Math.min(_connLimit+10,${total});renderConn()">+10</span>`;
+    else
+      expEl.innerHTML=`<span onclick="_connLimit=10;renderConn()">Show less</span>`;
+  } else {
+    expEl.style.display='none';
+  }
 }
 
 /* ── containers ──────────────────────────────────────────────────────────────── */
@@ -552,12 +575,21 @@ async function refreshContainers(){
 }
 
 function renderContainers(){
+  const dir=sortContDir==='asc'?1:-1;
+  const sorted=[...contData].sort((a,b)=>{
+    const av=a[sortCont]??0,bv=b[sortCont]??0;
+    return typeof av==='string'?dir*av.localeCompare(bv):dir*(av-bv);
+  });
+  document.querySelectorAll('#cont-card thead th[data-ccol]').forEach(th=>{
+    th.classList.remove('asc','desc');
+    if(th.dataset.ccol===sortCont) th.classList.add(sortContDir);
+  });
   const body=document.getElementById('cont-body');
   const empty=document.getElementById('cont-empty');
   document.getElementById('cont-cnt').textContent=contData.length;
   if(!contData.length){body.innerHTML='';empty.style.display='block';return}
   empty.style.display='none';
-  body.innerHTML=contData.map(c=>{
+  body.innerHTML=sorted.map(c=>{
     const sel=(c.name||c.id)===sub?'style="background:rgba(88,166,255,.06)"':'';
     const dimmed=!c.active?'style="opacity:.5"':'';
     const cfBadge=c.is_cloudflare?'<span class="badge b-cf" style="font-size:9px;margin-left:4px">CF</span>':'';
@@ -566,6 +598,7 @@ function renderContainers(){
       :'<td></td>';
     return `<tr ${sel} ${dimmed} onclick="setSub('${c.name||c.id}')" style="cursor:pointer">
       <td><span class="live-dot ${c.active?'on':'off'}"></span>${c.name}${cfBadge}</td>
+      <td class="bv" style="text-align:right">${c.total_bytes?fmtBytes(c.total_bytes):'—'}</td>
       <td class="bv" style="text-align:right;color:var(--rx)">${fmtMbps(c.rx_mbps)}</td>
       <td class="bv" style="text-align:right;color:var(--tx)">${fmtMbps(c.tx_mbps)}</td>
       ${removeBtn}
@@ -578,6 +611,7 @@ async function refreshDevices(){
   try{
     devData=await fetch(`${API}/api/devices?range=${range}`).then(r=>r.json());
     renderDevices();
+    _updateChartLabel();
   }catch(e){console.error('dev',e)}
 }
 
@@ -702,8 +736,7 @@ function setView(v){
     {interfaces:'Interface',containers:'Container'}[v]||'';
 
   // Chart label
-  document.getElementById('chart-lbl').textContent=
-    {interfaces:'Bandwidth',containers:'Container Bandwidth',devices:'Device Traffic',cf_tunnel:'CF Tunnel Traffic'}[v]||'Bandwidth';
+  _updateChartLabel();
 
   // Show/hide panels
   PANEL_IDS.forEach(id=>document.getElementById(id).style.display='none');
@@ -721,9 +754,21 @@ function setSub(s){
   refreshAll();
 }
 
+function _updateChartLabel(){
+  const base={interfaces:'Bandwidth',containers:'Container Bandwidth',cf_tunnel:'CF Tunnel Traffic'}[view]||'Bandwidth';
+  if(view==='devices'){
+    const d=_selectedDevice?devData.find(x=>x.ip===_selectedDevice):null;
+    const name=d?(labels[d.ip]||d.fw_name||d.hostname||d.ip):null;
+    document.getElementById('chart-lbl').textContent=name?`Device — ${name}`:'Device Traffic ↙ click a row';
+  } else {
+    document.getElementById('chart-lbl').textContent=base;
+  }
+}
+
 function selectDevice(ip){
-  _selectedDevice = _selectedDevice===ip ? null : ip; // toggle off if clicking same row
+  _selectedDevice = _selectedDevice===ip ? null : ip;
   renderDevices();
+  _updateChartLabel();
   refreshChart();
   refreshConnections();
 }
@@ -761,6 +806,12 @@ document.getElementById('tun-card').addEventListener('click',e=>{
   if(!th) return;
   sortTunDir=sortTun===th.dataset.tcol?(sortTunDir==='desc'?'asc':'desc'):'desc';
   sortTun=th.dataset.tcol; renderTunnel();
+});
+document.getElementById('cont-card').addEventListener('click',e=>{
+  const th=e.target.closest('th[data-ccol]');
+  if(!th) return;
+  sortContDir=sortCont===th.dataset.ccol?(sortContDir==='desc'?'asc':'desc'):'desc';
+  sortCont=th.dataset.ccol; renderContainers();
 });
 
 document.getElementById('view-btns').addEventListener('click',e=>{
