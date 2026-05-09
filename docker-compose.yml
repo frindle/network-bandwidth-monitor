@@ -9,6 +9,7 @@ services:
     volumes:
       - /proc/1/net:/host/net:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /root/.ssh/id_firewalla:/root/.ssh/id_firewalla:ro
       - netmon_data:/data
     env_file: .env
     networks:

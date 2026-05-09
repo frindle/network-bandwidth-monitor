@@ -98,6 +98,18 @@ def init_db():
                 value      TEXT    NOT NULL,
                 updated_at INTEGER NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS starlink_bw_raw (
+                ts      INTEGER NOT NULL PRIMARY KEY,
+                rx_rate REAL    NOT NULL,
+                tx_rate REAL    NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS starlink_bw_hourly (
+                hour_ts      INTEGER NOT NULL PRIMARY KEY,
+                rx_bytes     INTEGER NOT NULL DEFAULT 0,
+                tx_bytes     INTEGER NOT NULL DEFAULT 0,
+                peak_rx_rate REAL    NOT NULL DEFAULT 0,
+                peak_tx_rate REAL    NOT NULL DEFAULT 0
+            );
             CREATE TABLE IF NOT EXISTS fw_devices (
                 mac        TEXT    PRIMARY KEY,
                 ip         TEXT    NOT NULL DEFAULT '',
@@ -124,8 +136,26 @@ def init_db():
 def _migrate():
     """Apply schema upgrades to existing databases."""
     with _db() as conn:
-        # v0.3 → v0.4: add fw_devices table
         tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+
+        # v0.4 → v0.5: add starlink tables
+        if 'starlink_bw_raw' not in tables:
+            conn.executescript("""
+                CREATE TABLE IF NOT EXISTS starlink_bw_raw (
+                    ts      INTEGER NOT NULL PRIMARY KEY,
+                    rx_rate REAL    NOT NULL,
+                    tx_rate REAL    NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS starlink_bw_hourly (
+                    hour_ts      INTEGER NOT NULL PRIMARY KEY,
+                    rx_bytes     INTEGER NOT NULL DEFAULT 0,
+                    tx_bytes     INTEGER NOT NULL DEFAULT 0,
+                    peak_rx_rate REAL    NOT NULL DEFAULT 0,
+                    peak_tx_rate REAL    NOT NULL DEFAULT 0
+                );
+            """)
+
+        # v0.3 → v0.4: add fw_devices table
         if 'fw_devices' not in tables:
             conn.executescript("""
                 CREATE TABLE IF NOT EXISTS fw_devices (
@@ -427,6 +457,30 @@ def get_all_settings(keys: list) -> dict:
         return {r['key']: r['value'] for r in rows}
 
 
+# ── Starlink WAN ──────────────────────────────────────────────────────────────
+
+def insert_starlink_raw(ts: int, rx_rate: float, tx_rate: float):
+    with _db() as conn:
+        conn.execute("INSERT OR REPLACE INTO starlink_bw_raw VALUES (?,?,?)",
+                     (ts, rx_rate, tx_rate))
+
+
+def query_starlink_raw(since: int):
+    with _db() as conn:
+        return conn.execute(
+            "SELECT ts, rx_rate, tx_rate FROM starlink_bw_raw WHERE ts>=? ORDER BY ts",
+            (since,)
+        ).fetchall()
+
+
+def query_starlink_hourly(since: int):
+    with _db() as conn:
+        return conn.execute(
+            "SELECT hour_ts, rx_bytes, tx_bytes FROM starlink_bw_hourly WHERE hour_ts>=? ORDER BY hour_ts",
+            (since,)
+        ).fetchall()
+
+
 # ── Firewalla devices ─────────────────────────────────────────────────────────
 
 def upsert_fw_device(mac: str, ip: str, name: str, mac_vendor: str, last_active: int):
@@ -525,5 +579,20 @@ def aggregate_hourly():
                 peak_tx_rate=MAX(container_bw_hourly.peak_tx_rate,excluded.peak_tx_rate)
         """, (cur_hour,))
 
+        conn.execute("""
+            INSERT INTO starlink_bw_hourly (hour_ts,rx_bytes,tx_bytes,peak_rx_rate,peak_tx_rate)
+            SELECT (ts/3600)*3600,
+                   CAST(SUM(rx_rate*30) AS INTEGER), CAST(SUM(tx_rate*30) AS INTEGER),
+                   MAX(rx_rate), MAX(tx_rate)
+            FROM starlink_bw_raw WHERE ts<?
+            GROUP BY (ts/3600)*3600
+            ON CONFLICT(hour_ts) DO UPDATE SET
+                rx_bytes=MAX(starlink_bw_hourly.rx_bytes,excluded.rx_bytes),
+                tx_bytes=MAX(starlink_bw_hourly.tx_bytes,excluded.tx_bytes),
+                peak_rx_rate=MAX(starlink_bw_hourly.peak_rx_rate,excluded.peak_rx_rate),
+                peak_tx_rate=MAX(starlink_bw_hourly.peak_tx_rate,excluded.peak_tx_rate)
+        """, (cur_hour,))
+
         conn.execute("DELETE FROM bw_raw WHERE ts<?", (cutoff,))
         conn.execute("DELETE FROM container_bw_raw WHERE ts<?", (cutoff,))
+        conn.execute("DELETE FROM starlink_bw_raw WHERE ts<?", (cutoff,))
