@@ -323,6 +323,24 @@ def query_totals_by_iface(since_hour):
         """, (since_hour,)).fetchall()
 
 
+def query_totals_by_fw_wan(since_hour):
+    """Returns per-WAN-interface totals from starlink_bw_hourly, keyed as fw_wan_<iface>."""
+    with _db() as conn:
+        rows = conn.execute("""
+            SELECT iface,
+                   CAST(SUM(rx_bytes) AS INTEGER) AS rx_bytes,
+                   CAST(SUM(tx_bytes) AS INTEGER) AS tx_bytes,
+                   CAST(SUM(rx_bytes + tx_bytes) AS INTEGER) AS total_bytes
+            FROM starlink_bw_hourly WHERE hour_ts >= ?
+            GROUP BY iface
+        """, (since_hour,)).fetchall()
+        return [{'iface': f'fw_wan_{r["iface"]}',
+                 'rx_bytes': r['rx_bytes'] or 0,
+                 'tx_bytes': r['tx_bytes'] or 0,
+                 'total_bytes': r['total_bytes'] or 0}
+                for r in rows]
+
+
 # ── connections ────────────────────────────────────────────────────────────────
 
 def upsert_conn_delta(hour_ts, iface, source_ip, protocol, remote_ip, remote_port, tx_delta, rx_delta):

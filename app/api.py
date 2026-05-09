@@ -248,9 +248,12 @@ def totals():
     result  = {}
     for label, seconds in _PERIOD_SECONDS.items():
         sh = ((int(time.time()) - seconds) // 3600) * 3600
-        rows = db.query_totals_by_iface(sh) if subject == 'interfaces' \
-               else db.query_totals_by_container(sh)
-        result[label] = [dict(r) for r in rows]
+        if subject == 'interfaces':
+            rows = [dict(r) for r in db.query_totals_by_iface(sh)]
+            rows += db.query_totals_by_fw_wan(sh)   # add Cox WAN / Starlink WAN rows
+        else:
+            rows = [dict(r) for r in db.query_totals_by_container(sh)]
+        result[label] = rows
     return jsonify(result)
 
 
