@@ -429,6 +429,9 @@ async function refreshChart(){
       if(sub.startsWith('fw_wan_')){
         const iface=sub.replace('fw_wan_','');
         url=`${API}/api/starlink_bandwidth?range=${range}&iface=${iface}`;
+      } else if(sub==='all'&&_starlinkAvail){
+        // Firewalla Cox WAN is the authoritative total — prefer it over Unraid bond0
+        url=`${API}/api/starlink_bandwidth?range=${range}&iface=eth0`;
       } else {
         const iface=sub==='all'?'bond0':sub;
         url=`${API}/api/bandwidth?iface=${iface}&range=${range}`;
@@ -543,9 +546,11 @@ function renderConn(){
     const disp=r.label||r.hostname||r.remote_ip;
     const cfB=r.is_cloudflare?'<span class="badge b-cf">CF</span>':'';
     const svcB=r.service?`<span class="badge b-svc">${r.service}</span>`:'';
+    const srcs=r.source_names&&r.source_names.length
+      ?`<span class="ips">via ${r.source_names.join(', ')}</span>`:'';
     const host=isIP&&!r.label
-      ?`<div class="hcell"><span class="hn">${r.remote_ip} ${cfB}${svcB}</span></div>`
-      :`<div class="hcell"><span class="hn">${disp} ${cfB}${svcB}${labelHtml(r.remote_ip)}</span><span class="ips">${r.remote_ip}</span></div>`;
+      ?`<div class="hcell"><span class="hn">${r.remote_ip} ${cfB}${svcB}</span>${srcs}</div>`
+      :`<div class="hcell"><span class="hn">${disp} ${cfB}${svcB}${labelHtml(r.remote_ip)}</span><span class="ips">${r.remote_ip}</span>${srcs}</div>`;
     const pct=Math.round((r.total_bytes||0)/maxBytes*100);
     return `<tr>
       <td>${host}</td>
@@ -760,7 +765,9 @@ function setSub(s){
 }
 
 function _updateChartLabel(){
-  const base={interfaces:'Bandwidth',containers:'Container Bandwidth',cf_tunnel:'CF Tunnel Traffic'}[view]||'Bandwidth';
+  const base=view==='interfaces'
+    ?(sub==='all'&&_starlinkAvail?'WAN Bandwidth (Cox via Firewalla)':sub.startsWith('fw_wan_')?`${sub==='fw_wan_eth0'?'Cox':'Starlink'} WAN (Firewalla)`:'Bandwidth')
+    :{containers:'Container Bandwidth',cf_tunnel:'CF Tunnel Traffic'}[view]||'Bandwidth';
   if(view==='devices'){
     const d=_selectedDevice?devData.find(x=>x.ip===_selectedDevice):null;
     const name=d?(labels[d.ip]||d.fw_name||d.hostname||d.ip):null;

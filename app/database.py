@@ -626,7 +626,8 @@ def query_fw_connections(since_hour: int, source_ip: str | None = None,
             return conn.execute("""
                 SELECT remote_ip, domain, protocol, remote_port,
                        SUM(tx_bytes) AS tx_bytes, SUM(rx_bytes) AS rx_bytes,
-                       SUM(tx_bytes+rx_bytes) AS total_bytes, SUM(hit_count) AS hit_count
+                       SUM(tx_bytes+rx_bytes) AS total_bytes, SUM(hit_count) AS hit_count,
+                       1 AS source_count, source_ip AS source_ips
                 FROM fw_conn_hourly
                 WHERE hour_ts>=? AND source_ip=?
                 GROUP BY remote_ip, protocol, remote_port
@@ -635,7 +636,9 @@ def query_fw_connections(since_hour: int, source_ip: str | None = None,
         return conn.execute("""
             SELECT remote_ip, domain, protocol, remote_port,
                    SUM(tx_bytes) AS tx_bytes, SUM(rx_bytes) AS rx_bytes,
-                   SUM(tx_bytes+rx_bytes) AS total_bytes, SUM(hit_count) AS hit_count
+                   SUM(tx_bytes+rx_bytes) AS total_bytes, SUM(hit_count) AS hit_count,
+                   COUNT(DISTINCT source_ip) AS source_count,
+                   GROUP_CONCAT(DISTINCT source_ip) AS source_ips
             FROM fw_conn_hourly
             WHERE hour_ts>=?
             GROUP BY remote_ip, protocol, remote_port
