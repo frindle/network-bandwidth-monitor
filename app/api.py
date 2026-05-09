@@ -10,7 +10,7 @@ import app.fw_collector as fw_collector
 import app.resolver as resolver
 import app.starlink_collector as starlink_collector
 
-VERSION = '0.5.0'
+VERSION = '0.6.0'
 
 app = Flask(__name__)
 
@@ -141,6 +141,7 @@ def devices():
             'fw_name':     fw_info['name']       if fw_info else None,
             'fw_mac':      fw_info['mac']        if fw_info else None,
             'fw_vendor':   fw_info['mac_vendor'] if fw_info else None,
+            'fw_group':    fw_info['group_name'] if fw_info else None,
             'tx_bytes':    r['tx_bytes'],
             'rx_bytes':    r['rx_bytes'],
             'total_bytes': r['total_bytes'],
@@ -159,6 +160,7 @@ def devices():
             'fw_name':     fw['name'] or None,
             'fw_mac':      fw['mac'],
             'fw_vendor':   fw['mac_vendor'] or None,
+            'fw_group':    fw['group_name'] or None,
             'tx_bytes':    0,
             'rx_bytes':    0,
             'total_bytes': 0,
@@ -342,10 +344,19 @@ def fw_devices_list():
             'ip':         d['ip'],
             'name':       d['name'],
             'mac_vendor': d['mac_vendor'],
+            'group_name': d['group_name'],
             'label':      labels.get(d['ip']),
             'last_active': d['last_active'],
         })
     return jsonify(result)
+
+
+@app.route('/api/fw_debug')
+def fw_debug():
+    """Returns raw Firewalla host data for the first 3 devices — use to inspect field names."""
+    import app.firewalla as fw
+    devices = fw.get_devices()
+    return jsonify(devices[:3])
 
 
 # ── status ─────────────────────────────────────────────────────────────────────
