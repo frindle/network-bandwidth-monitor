@@ -24,6 +24,119 @@ _PERIOD_SECONDS = {
 }
 
 
+_SERVICE_PATTERNS = [
+    # (domain_fragment, service_name)
+    ('googlevideo.com',       'YouTube'),
+    ('youtube.com',           'YouTube'),
+    ('ytimg.com',             'YouTube'),
+    ('ggpht.com',             'YouTube'),
+    ('netflix.com',           'Netflix'),
+    ('nflxvideo.net',         'Netflix'),
+    ('nflximg.net',           'Netflix'),
+    ('nflxext.com',           'Netflix'),
+    ('spotify.com',           'Spotify'),
+    ('scdn.co',               'Spotify'),
+    ('icloud.com',            'Apple iCloud'),
+    ('apple.com',             'Apple'),
+    ('mzstatic.com',          'Apple'),
+    ('aaplimg.com',           'Apple'),
+    ('amazonaws.com',         'AWS'),
+    ('cloudfront.net',        'AWS CloudFront'),
+    ('microsoft.com',         'Microsoft'),
+    ('windows.com',           'Microsoft'),
+    ('microsoftonline.com',   'Microsoft'),
+    ('live.com',              'Microsoft'),
+    ('office.com',            'Microsoft 365'),
+    ('office365.com',         'Microsoft 365'),
+    ('twitch.tv',             'Twitch'),
+    ('twitchsvc.net',         'Twitch'),
+    ('jtvnw.net',             'Twitch'),
+    ('hulu.com',              'Hulu'),
+    ('disneyplus.com',        'Disney+'),
+    ('bamgrid.com',           'Disney+'),
+    ('dssott.com',            'Disney+'),
+    ('facebook.com',          'Facebook'),
+    ('fbcdn.net',             'Facebook'),
+    ('instagram.com',         'Instagram'),
+    ('twitter.com',           'Twitter/X'),
+    ('twimg.com',             'Twitter/X'),
+    ('x.com',                 'Twitter/X'),
+    ('discord.com',           'Discord'),
+    ('discordapp.com',        'Discord'),
+    ('plex.tv',               'Plex'),
+    ('plex.direct',           'Plex'),
+    ('plexapp.com',           'Plex'),
+    ('steampowered.com',      'Steam'),
+    ('steamcontent.com',      'Steam'),
+    ('steamgames.com',        'Steam'),
+    ('valve.net',             'Steam'),
+    ('akamai.net',            'Akamai CDN'),
+    ('akamaized.net',         'Akamai CDN'),
+    ('akamaitechnologies.com','Akamai CDN'),
+    ('akamaihd.net',          'Akamai CDN'),
+    ('fastly.net',            'Fastly CDN'),
+    ('fastlylb.net',          'Fastly CDN'),
+    ('cloudflare.com',        'Cloudflare'),
+    ('cloudflare-dns.com',    'Cloudflare'),
+    ('1dot1dot1dot1.cloudflare.com', 'Cloudflare DNS'),
+    ('googleapis.com',        'Google'),
+    ('gstatic.com',           'Google'),
+    ('google.com',            'Google'),
+    ('googleusercontent.com', 'Google'),
+    ('gvt1.com',              'Google'),
+    ('gvt2.com',              'Google'),
+    ('reddit.com',            'Reddit'),
+    ('redd.it',               'Reddit'),
+    ('redditmedia.com',       'Reddit'),
+    ('redditstatic.com',      'Reddit'),
+    ('github.com',            'GitHub'),
+    ('githubusercontent.com', 'GitHub'),
+    ('github.io',             'GitHub'),
+    ('dropbox.com',           'Dropbox'),
+    ('dropboxstatic.com',     'Dropbox'),
+    ('zoom.us',               'Zoom'),
+    ('zoomgov.com',           'Zoom'),
+    ('slack.com',             'Slack'),
+    ('slack-msgs.com',        'Slack'),
+    ('slackb.com',            'Slack'),
+    ('sony.com',              'Sony'),
+    ('playstation.com',       'PlayStation'),
+    ('playstation.net',       'PlayStation'),
+    ('nintendo.com',          'Nintendo'),
+    ('nintendo.net',          'Nintendo'),
+    ('xbox.com',              'Xbox'),
+    ('xboxlive.com',          'Xbox Live'),
+    ('amazon.com',            'Amazon'),
+    ('primevideo.com',        'Prime Video'),
+    ('sling.com',             'Sling TV'),
+    ('hbo.com',               'HBO/Max'),
+    ('hbomax.com',            'HBO/Max'),
+    ('max.com',               'HBO/Max'),
+    ('phicdn.net',            'Paramount+'),
+    ('paramount.com',         'Paramount+'),
+    ('peacocktv.com',         'Peacock'),
+    ('nbcuni.com',            'Peacock'),
+    ('vudu.com',              'Vudu'),
+    ('tubi.tv',               'Tubi'),
+    ('ebay.com',              'eBay'),
+    ('paypal.com',            'PayPal'),
+    ('cloudimage.io',         'CDN'),
+    ('cloudinary.com',        'Cloudinary'),
+    ('imgix.net',             'Imgix CDN'),
+    ('cdn77.org',             'CDN77'),
+    ('b-cdn.net',             'BunnyCDN'),
+]
+
+def _detect_service(hostname: str) -> str | None:
+    if not hostname:
+        return None
+    h = hostname.lower()
+    for frag, name in _SERVICE_PATTERNS:
+        if frag in h:
+            return name
+    return None
+
+
 def _since(r: str) -> int:
     return int(time.time()) - _RANGES.get(r, 86400)
 
@@ -104,6 +217,7 @@ def connections():
             'remote_ip':     r['remote_ip'],
             'hostname':      hostname,
             'label':         labels.get(r['remote_ip']),
+            'service':       _detect_service(hostname),
             'remote_port':   r['remote_port'],
             'protocol':      r['protocol'],
             'tx_bytes':      r['tx_bytes'],
@@ -231,36 +345,44 @@ def cf_tunnel_bandwidth():
 
 @app.route('/api/containers')
 def containers():
-    running = docker_stats.list_running()   # {id: name} — Docker-reported running containers
-    rates   = docker_stats.current_rates()  # {id: {name,rx,tx}} — live bandwidth (may lag 1 cycle)
-    known   = db.known_containers()         # [{id,name}] — historical, deduped by name
+    running    = docker_stats.list_running()   # {id: name}
+    rates      = docker_stats.current_rates()  # {id: {name,rx,tx}}
+    known      = db.known_containers()         # [{id,name}]
+    since_hour = _since_hour('24h')
+    totals     = {r['container_name']: r for r in db.query_totals_by_container(since_hour)}
 
     seen_names = set()
     result = []
 
-    # Active: whatever Docker says is currently running
     for cid, name in running.items():
         if name in seen_names:
             continue
         seen_names.add(name)
         r = rates.get(cid, {})
+        t = totals.get(name, {})
         result.append({'id': cid, 'name': name,
-                        'rx_mbps': round(r.get('rx', 0)*8/1e6, 3),
-                        'tx_mbps': round(r.get('tx', 0)*8/1e6, 3),
+                        'rx_mbps':   round(r.get('rx', 0)*8/1e6, 3),
+                        'tx_mbps':   round(r.get('tx', 0)*8/1e6, 3),
+                        'rx_bytes':  t.get('rx_bytes', 0) or 0,
+                        'tx_bytes':  t.get('tx_bytes', 0) or 0,
+                        'total_bytes': t.get('total_bytes', 0) or 0,
                         'is_cloudflare': 'cloudflare' in name.lower(),
                         'active': True})
 
-    # Inactive: in DB history but not currently running in Docker
     for c in known:
         if c['name'] in seen_names:
             continue
         seen_names.add(c['name'])
+        t = totals.get(c['name'], {})
         result.append({'id': c['id'], 'name': c['name'],
                         'rx_mbps': 0, 'tx_mbps': 0,
+                        'rx_bytes':  t.get('rx_bytes', 0) or 0,
+                        'tx_bytes':  t.get('tx_bytes', 0) or 0,
+                        'total_bytes': t.get('total_bytes', 0) or 0,
                         'is_cloudflare': 'cloudflare' in c['name'].lower(),
                         'active': False})
 
-    result.sort(key=lambda x: (not x['active'], x['name']))
+    result.sort(key=lambda x: (not x['active'], -(x['total_bytes'] or 0)))
     return jsonify(result)
 
 
