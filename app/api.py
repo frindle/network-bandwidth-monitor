@@ -49,6 +49,7 @@ def interfaces():
     for iface in list(rates) + known:
         if iface in seen: continue
         seen.add(iface)
+        if collector.skip_iface(iface): continue
         r = rates.get(iface, {'rx': 0, 'tx': 0})
         result.append({'name': iface,
                         'rx_mbps': round(r['rx']*8/1e6, 3),
