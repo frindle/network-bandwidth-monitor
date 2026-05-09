@@ -114,16 +114,9 @@
     .bar-fill{height:100%;border-radius:2px;background:var(--accent)}
     .bv{font-variant-numeric:tabular-nums;min-width:60px;text-align:right}
 
-    /* container grid */
-    .cgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px}
-    .cc{background:var(--hover);border:1px solid var(--border);border-radius:8px;padding:10px 12px;cursor:pointer;transition:border-color .15s}
-    .cc:hover{border-color:var(--accent)}
-    .cc.sel{border-color:var(--accent);background:rgba(88,166,255,.07)}
-    .cc.cfc{border-color:rgba(246,130,31,.35)}
-    .cc.cfc.sel{border-color:var(--cf);background:rgba(246,130,31,.07)}
-    .cc.off{opacity:.5}
-    .cn{font-weight:600;font-size:13px;margin-bottom:5px;display:flex;align-items:center;gap:5px}
-    .cr{display:flex;gap:8px;font-size:12px;font-variant-numeric:tabular-nums}
+    .live-dot{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:4px}
+    .live-dot.on{background:var(--rx)}
+    .live-dot.off{background:var(--muted)}
 
     /* label editor */
     .label-wrap{display:inline-flex;align-items:center;gap:4px}
@@ -254,10 +247,18 @@
     <div class="empty" id="conn-empty" style="display:none">No connection data yet.</div>
   </div>
 
-  <!-- containers grid -->
+  <!-- containers table -->
   <div class="card" id="cont-card" style="display:none">
     <div class="ch"><div class="meta"><span class="ct">Docker Containers</span><span class="cnt" id="cont-cnt">0</span></div></div>
-    <div class="cgrid" id="cont-grid"></div>
+    <table>
+      <thead><tr>
+        <th>Container</th>
+        <th style="text-align:right">↓ Download</th>
+        <th style="text-align:right">↑ Upload</th>
+        <th style="width:24px"></th>
+      </tr></thead>
+      <tbody id="cont-body"></tbody>
+    </table>
     <div class="empty" id="cont-empty" style="display:none">Docker socket not available or no containers running.</div>
   </div>
 
@@ -460,7 +461,7 @@ async function refreshHeader(){
     if(view==='interfaces'||view==='containers'){
       const tabEl=document.getElementById('sub-tabs');
       const existing=new Set([...tabEl.querySelectorAll('[data-sub]')].map(b=>b.dataset.sub));
-      data.forEach(x=>{
+      data.filter(x=>x.active!==false).forEach(x=>{
         const sid=view==='interfaces'?x.name:x.id;
         if(!existing.has(sid)){
           const btn=document.createElement('button');
@@ -530,22 +531,25 @@ async function refreshContainers(){
 }
 
 function renderContainers(){
-  const grid=document.getElementById('cont-grid');
+  const body=document.getElementById('cont-body');
   const empty=document.getElementById('cont-empty');
   document.getElementById('cont-cnt').textContent=contData.length;
-  if(!contData.length){grid.innerHTML='';empty.style.display='block';return}
+  if(!contData.length){body.innerHTML='';empty.style.display='block';return}
   empty.style.display='none';
-  grid.innerHTML=contData.map(c=>`
-    <div class="cc${c.is_cloudflare?' cfc':''}${c.id===sub?' sel':''}${!c.active?' off':''}" onclick="setSub('${c.id}')">
-      <div class="cn">${c.name}${c.is_cloudflare?'<span class="badge b-cf" style="font-size:9px">CF</span>':''}
-        ${!c.active?`<span style="margin-left:auto;font-size:10px;cursor:pointer;color:var(--muted)" title="Remove from history" onclick="event.stopPropagation();purgeContainer('${c.id}','${c.name}')">✕</span>`:''}
-      </div>
-      <div class="cr">
-        <span class="c-rx">↓ ${fmtMbps(c.rx_mbps)}</span>
-        <span class="c-tx">↑ ${fmtMbps(c.tx_mbps)}</span>
-        <span style="margin-left:auto;font-size:10px;color:${c.active?'var(--rx)':'var(--muted)'}">● ${c.active?'live':'off'}</span>
-      </div>
-    </div>`).join('');
+  body.innerHTML=contData.map(c=>{
+    const sel=c.id===sub?'style="background:rgba(88,166,255,.06)"':'';
+    const dimmed=!c.active?'style="opacity:.5"':'';
+    const cfBadge=c.is_cloudflare?'<span class="badge b-cf" style="font-size:9px;margin-left:4px">CF</span>':'';
+    const removeBtn=!c.active
+      ?`<td style="text-align:right"><span style="cursor:pointer;color:var(--muted);font-size:12px" title="Remove from history" onclick="event.stopPropagation();purgeContainer('${c.id}','${c.name}')">✕</span></td>`
+      :'<td></td>';
+    return `<tr ${sel} ${dimmed} onclick="setSub('${c.id}')" style="cursor:pointer">
+      <td><span class="live-dot ${c.active?'on':'off'}"></span>${c.name}${cfBadge}</td>
+      <td class="bv" style="text-align:right;color:var(--rx)">${fmtMbps(c.rx_mbps)}</td>
+      <td class="bv" style="text-align:right;color:var(--tx)">${fmtMbps(c.tx_mbps)}</td>
+      ${removeBtn}
+    </tr>`;
+  }).join('');
 }
 
 /* ── devices ─────────────────────────────────────────────────────────────────── */
