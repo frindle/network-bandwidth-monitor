@@ -78,12 +78,11 @@
     #chartbox{position:relative;height:240px}
 
     /* totals */
-    .tg{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:14px}
-    .tc{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 12px}
-    .tp{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-bottom:4px}
-    .tr{display:flex;justify-content:space-between;align-items:baseline;margin-top:2px}
-    .tl{font-size:11px;color:var(--muted)}
-    .tv{font-size:13px;font-weight:600;font-variant-numeric:tabular-nums}
+    .totals-tbl{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:14px;background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+    .totals-tbl th{text-align:right;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);padding:8px 14px;border-bottom:1px solid var(--border);font-weight:600;white-space:nowrap}
+    .totals-tbl th:first-child{text-align:left;width:60px}
+    .totals-tbl td{text-align:right;padding:7px 14px;font-variant-numeric:tabular-nums;font-weight:600;font-size:13px}
+    .totals-tbl td:first-child{text-align:left;color:var(--muted);font-size:11px;font-weight:400}
 
     /* tables */
     table{width:100%;border-collapse:collapse;font-size:13px}
@@ -221,7 +220,7 @@
   </div>
 
   <!-- period totals -->
-  <div class="tg" id="totals"></div>
+  <div id="totals"></div>
 
   <!-- bandwidth chart (shown for interfaces / containers / devices / cf_tunnel) -->
   <div class="card" id="chart-card">
@@ -449,18 +448,21 @@ async function refreshTotals(){
   try{
     const subject=view==='containers'?'containers':'interfaces';
     const data=await fetch(`${API}/api/totals?subject=${subject}`).then(r=>r.json());
-    const labels2={'1d':'Last 24h','7d':'Last 7d','14d':'Last 14d','30d':'Last 30d'};
-    document.getElementById('totals').innerHTML=Object.entries(labels2).map(([k,lbl])=>{
+    const labels2=[['1d','Last 24h'],['7d','Last 7d'],['14d','Last 14d'],['30d','Last 30d']];
+    const cols=labels2.map(([k,lbl])=>{
       const rows=data[k]||[];
       const m=sub==='all'
         ?rows.reduce((a,r)=>({rx_bytes:(a.rx_bytes||0)+(r.rx_bytes||0),tx_bytes:(a.tx_bytes||0)+(r.tx_bytes||0)}),{})
         :rows.find(r=>(r.iface||r.container_name)===sub)||{};
-      return `<div class="tc">
-        <div class="tp">${lbl}</div>
-        <div class="tr"><span class="tl">↓ Down</span><span class="tv c-rx">${fmtBytes(m.rx_bytes||0)}</span></div>
-        <div class="tr"><span class="tl">↑ Up</span><span class="tv c-tx">${fmtBytes(m.tx_bytes||0)}</span></div>
-      </div>`;
-    }).join('');
+      return {lbl,rx:m.rx_bytes||0,tx:m.tx_bytes||0};
+    });
+    document.getElementById('totals').innerHTML=`<table class="totals-tbl">
+      <thead><tr><th></th>${cols.map(c=>`<th>${c.lbl}</th>`).join('')}</tr></thead>
+      <tbody>
+        <tr><td>↓ Down</td>${cols.map(c=>`<td class="c-rx">${fmtBytes(c.rx)}</td>`).join('')}</tr>
+        <tr><td>↑ Up</td>${cols.map(c=>`<td class="c-tx">${fmtBytes(c.tx)}</td>`).join('')}</tr>
+      </tbody>
+    </table>`;
   }catch(e){console.error('totals',e)}
 }
 
@@ -576,8 +578,14 @@ async function refreshDevices(){
 
 function renderDevices(){
   const dir=sortDevDir==='asc'?1:-1;
+  const effVal=(d,col)=>{
+    if(col==='total_bytes') return d.total_bytes||(d.fw_rx_bytes+d.fw_tx_bytes)||0;
+    if(col==='rx_bytes')    return d.rx_bytes||d.fw_rx_bytes||0;
+    if(col==='tx_bytes')    return d.tx_bytes||d.fw_tx_bytes||0;
+    return d[col]??0;
+  };
   const sorted=[...devData].sort((a,b)=>{
-    const av=a[sortDev]??0,bv=b[sortDev]??0;
+    const av=effVal(a,sortDev),bv=effVal(b,sortDev);
     return typeof av==='string'?dir*av.localeCompare(bv):dir*(av-bv);
   });
   document.querySelectorAll('#dev-card thead th[data-dcol]').forEach(th=>{
@@ -853,6 +861,23 @@ async function checkStatus(){
       _starlinkAvail=true;
       if(view==='interfaces') addSubOption('starlink','Starlink WAN');
     }
+    // Stale collection warning (>5 min since last bandwidth sample)
+    const staleMins=Math.round((s.ts-(s.last_bw_ts||0))/60);
+    const stxt=document.getElementById('stxt');
+    if(s.last_bw_ts && staleMins>5){
+      stxt.textContent=`⚠ Collection stalled — last sample ${staleMins}m ago`;
+      stxt.style.color='var(--tx)';
+    }
+    // Version check
+    fetch(`${API}/api/version_check`).then(r=>r.json()).then(v=>{
+      if(v.update_available){
+        const badge=document.getElementById('ver');
+        badge.textContent+=' ↑ update available';
+        badge.style.background='rgba(248,81,73,.2)';
+        badge.style.color='var(--tx)';
+        badge.title=`Latest: v${v.latest} — git pull && docker compose up -d --build on Unraid`;
+      }
+    }).catch(()=>{});
   }catch(e){}
 }
 

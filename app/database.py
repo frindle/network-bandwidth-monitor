@@ -268,7 +268,7 @@ def upsert_conn_delta(hour_ts, iface, source_ip, protocol, remote_ip, remote_por
         """, (hour_ts, iface, source_ip, protocol, remote_ip, remote_port, tx_delta, rx_delta))
 
 
-def query_connections(iface, since_hour, source_ip=None, limit=100):
+def query_connections(iface, since_hour, source_ip=None, limit=200):
     with _db() as conn:
         if source_ip:
             return conn.execute("""
