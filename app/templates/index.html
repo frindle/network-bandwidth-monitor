@@ -786,7 +786,7 @@ async function saveSettings(){
     headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   const el=document.getElementById('save-result');
   el.style.display='';
-  if(res.ok){ el.className='test-result test-ok'; el.textContent='Saved'; setTimeout(()=>el.style.display='none',2000); }
+  if(res.ok){ el.className='test-result test-ok'; el.textContent='Saved'; setTimeout(()=>{ el.style.display='none'; closeSettings(); },1200); }
   else       { el.className='test-result test-fail'; el.textContent='Save failed'; }
 }
 
