@@ -33,6 +33,8 @@ _last_iface_bytes  = {}
 _last_conn_bytes   = {}
 _current_rates     = {}
 _scheduler         = None
+_last_bw_ts        = 0
+_last_conn_ts      = 0
 
 
 # ── helpers ────────────────────────────────────────────────────────────────────
@@ -235,21 +237,65 @@ def collect_connections():
 
 # ── public ─────────────────────────────────────────────────────────────────────
 
+def is_local(ip: str) -> bool:
+    return _is_local(ip)
+
+
 def current_rates() -> dict:
     with _lock:
         return {iface: dict(v) for iface, v in _current_rates.items()}
 
 
+def last_collection_times() -> dict:
+    return {'bw': _last_bw_ts, 'conn': _last_conn_ts}
+
+
+def _safe_collect_bandwidth():
+    global _last_bw_ts
+    try:
+        collect_bandwidth()
+        _last_bw_ts = int(time.time())
+    except Exception:
+        import traceback
+        traceback.print_exc()
+
+
+def _safe_collect_connections():
+    global _last_conn_ts
+    try:
+        collect_connections()
+        _last_conn_ts = int(time.time())
+    except Exception:
+        import traceback
+        traceback.print_exc()
+
+
+def _safe_aggregate():
+    try:
+        db.aggregate_hourly()
+    except Exception:
+        import traceback
+        traceback.print_exc()
+
+
+def _safe_docker():
+    try:
+        docker_stats.collect_docker_stats()
+    except Exception:
+        import traceback
+        traceback.print_exc()
+
+
 def start():
     global _scheduler
     db.init_db()
-    collect_bandwidth()
+    _safe_collect_bandwidth()
 
     _scheduler = BackgroundScheduler(daemon=True)
-    _scheduler.add_job(collect_bandwidth,   'interval', seconds=10, id='bw')
-    _scheduler.add_job(collect_connections, 'interval', seconds=60, id='conn')
-    _scheduler.add_job(db.aggregate_hourly, 'interval', hours=1,   id='agg')
+    _scheduler.add_job(_safe_collect_bandwidth,   'interval', seconds=10, id='bw')
+    _scheduler.add_job(_safe_collect_connections, 'interval', seconds=60, id='conn')
+    _scheduler.add_job(_safe_aggregate,           'interval', hours=1,   id='agg')
     if docker_stats.available():
-        docker_stats.collect_docker_stats()
-        _scheduler.add_job(docker_stats.collect_docker_stats, 'interval', seconds=10, id='docker')
+        _safe_docker()
+        _scheduler.add_job(_safe_docker, 'interval', seconds=10, id='docker')
     _scheduler.start()

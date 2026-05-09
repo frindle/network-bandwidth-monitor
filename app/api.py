@@ -10,7 +10,7 @@ import app.fw_collector as fw_collector
 import app.resolver as resolver
 import app.starlink_collector as starlink_collector
 
-VERSION = '0.7.0'
+VERSION = '0.8.0'
 
 app = Flask(__name__)
 
@@ -132,6 +132,8 @@ def devices():
 
     for r in rows:
         ip      = r['source_ip']
+        if not collector.is_local(ip):   # skip Docker 172.x.x.x and other non-LAN IPs
+            continue
         seen_ips.add(ip)
         fw_info = fw_all.get(ip)
         result.append({
@@ -404,11 +406,29 @@ def starlink_bandwidth():
 
 @app.route('/api/status')
 def status():
+    ct = collector.last_collection_times()
     return jsonify({
         'ok': True, 'version': VERSION, 'ts': int(time.time()),
         'docker_available': docker_stats.available(),
         'starlink_available': starlink_collector.available(),
+        'last_bw_ts': ct['bw'],
+        'last_conn_ts': ct['conn'],
     })
+
+
+@app.route('/api/version_check')
+def version_check():
+    import urllib.request, json as _json
+    try:
+        url = 'https://api.github.com/repos/frindle/network-bandwidth-monitor/tags'
+        req = urllib.request.Request(url, headers={'User-Agent': 'netmon'})
+        with urllib.request.urlopen(req, timeout=5) as r:
+            tags = _json.loads(r.read())
+            latest = tags[0]['name'].lstrip('v') if tags else None
+            update = bool(latest and latest != VERSION)
+            return jsonify({'current': VERSION, 'latest': latest, 'update_available': update})
+    except Exception as e:
+        return jsonify({'current': VERSION, 'latest': None, 'update_available': False, 'error': str(e)})
 
 
 # ── startup ────────────────────────────────────────────────────────────────────
