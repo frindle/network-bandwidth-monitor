@@ -461,9 +461,16 @@ async function refreshTotals(){
     const labels2=[['1d','Last 24h'],['7d','Last 7d'],['14d','Last 14d'],['30d','Last 30d']];
     const cols=labels2.map(([k,lbl])=>{
       const rows=data[k]||[];
-      const m=sub==='all'
-        ?rows.reduce((a,r)=>({rx_bytes:(a.rx_bytes||0)+(r.rx_bytes||0),tx_bytes:(a.tx_bytes||0)+(r.tx_bytes||0)}),{})
-        :rows.find(r=>(r.iface||r.container_name)===sub)||{};
+      let m;
+      if(sub==='all'&&view==='interfaces'&&_starlinkAvail){
+        // Use Cox WAN (Firewalla eth0) as the authoritative total for the All view
+        m=rows.find(r=>r.iface==='fw_wan_eth0')||{};
+      } else if(sub==='all'){
+        m=rows.filter(r=>!String(r.iface||'').startsWith('fw_wan_'))
+               .reduce((a,r)=>({rx_bytes:(a.rx_bytes||0)+(r.rx_bytes||0),tx_bytes:(a.tx_bytes||0)+(r.tx_bytes||0)}),{});
+      } else {
+        m=rows.find(r=>(r.iface||r.container_name)===sub)||{};
+      }
       return {lbl,rx:m.rx_bytes||0,tx:m.tx_bytes||0};
     });
     document.getElementById('totals').innerHTML=`<table class="totals-tbl">
