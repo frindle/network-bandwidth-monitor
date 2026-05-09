@@ -9,3 +9,6 @@ venv/
 *.db-shm
 *.db-wal
 .env
+.memsearch/
+memory/
+*.jsonl
