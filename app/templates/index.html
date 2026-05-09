@@ -65,6 +65,8 @@
     .bg button.act-cf{background:var(--cf);color:#fff}
     .bg button.act-tunnel{background:var(--tunnel);color:#fff}
     .div{width:1px;height:22px;background:var(--border);margin:0 2px}
+    .sub-select{background:var(--surface);border:1px solid var(--border);border-radius:7px;color:var(--text);font-size:12px;font-weight:500;padding:5px 10px;cursor:pointer;outline:none;min-width:80px;max-width:220px}
+    .sub-select:focus{border-color:var(--accent)}
 
     /* cards */
     .card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px 18px;margin-bottom:14px}
@@ -107,6 +109,7 @@
     .b-cf::before{content:'☁ '}
     .b-tunnel{background:rgba(163,113,247,.15);color:var(--tunnel)}
     .b-fw{background:rgba(88,166,255,.1);color:var(--accent);font-size:9px}
+    .b-group{background:rgba(163,113,247,.12);color:var(--tunnel);font-size:9px;border-radius:4px;padding:1px 5px;font-weight:600}
     .fw-vendor{font-size:10px;color:var(--muted);font-style:italic}
 
     .bar-cell{display:flex;align-items:center;gap:6px}
@@ -199,7 +202,7 @@
     </div>
     <div class="div"></div>
     <span class="lbl" id="tab-lbl">Interface</span>
-    <div class="bg" id="sub-tabs"><button class="active" data-sub="all">All</button></div>
+    <select class="sub-select" id="sub-select" onchange="setSub(this.value)"><option value="all">All</option></select>
     <div class="div"></div>
     <span class="lbl">Range</span>
     <div class="bg" id="range-btns">
@@ -268,6 +271,7 @@
     <table>
       <thead><tr>
         <th data-dcol="label">Device</th>
+        <th data-dcol="fw_group">Group</th>
         <th data-dcol="total_bytes">Total</th>
         <th data-dcol="tx_bytes">↑ Sent</th>
         <th data-dcol="rx_bytes">↓ Recv</th>
@@ -306,11 +310,21 @@
 const API='';
 let view='interfaces', sub='all', range='24h';
 let sortConn='total_bytes', sortConnDir='desc';
-let sortDev='total_bytes',  sortDevDir='desc';
+let sortDev='fw_group',     sortDevDir='asc';
 let sortTun='total_bytes',  sortTunDir='desc';
 let connData=[], devData=[], tunData=[], contData=[];
 let maxBytes=1, labels={};
 let chart=null;
+let _starlinkAvail=false;
+let _selectedDevice=null;
+
+function addSubOption(value,text){
+  const sel=document.getElementById('sub-select');
+  if([...sel.options].some(o=>o.value===value)) return;
+  const opt=document.createElement('option');
+  opt.value=value; opt.textContent=text;
+  sel.appendChild(opt);
+}
 
 /* ── utils ─────────────────────────────────────────────────────────────────── */
 const fmtBytes=b=>{
@@ -409,8 +423,8 @@ async function refreshChart(){
       if(!sub||sub==='all') return;
       url=`${API}/api/container_bandwidth?id=${sub}&range=${range}`;
     }else if(view==='devices'){
-      if(!sub||sub==='all') return;
-      url=`${API}/api/device_bandwidth?ip=${encodeURIComponent(sub)}&range=${range}`;
+      if(!_selectedDevice) return;
+      url=`${API}/api/device_bandwidth?ip=${encodeURIComponent(_selectedDevice)}&range=${range}`;
     }else if(view==='cf_tunnel'){
       url=`${API}/api/cf_tunnel_bandwidth?range=${range}`;
     }else return;
@@ -457,19 +471,11 @@ async function refreshHeader(){
       </div>`).join('');
     document.getElementById('stxt').textContent=`Live · ${new Date().toLocaleTimeString()}`;
 
-    // Populate sub-tabs for interfaces/containers
+    // Populate sub-select for interfaces/containers
     if(view==='interfaces'||view==='containers'){
-      const tabEl=document.getElementById('sub-tabs');
-      const existing=new Set([...tabEl.querySelectorAll('[data-sub]')].map(b=>b.dataset.sub));
       data.filter(x=>x.active!==false).forEach(x=>{
         const sid=view==='interfaces'?x.name:x.id;
-        if(!existing.has(sid)){
-          const btn=document.createElement('button');
-          btn.dataset.sub=sid; btn.textContent=x.name||x.id;
-          if(x.is_cloudflare) btn.style.borderLeft='2px solid var(--cf)';
-          btn.addEventListener('click',()=>setSub(sid));
-          tabEl.appendChild(btn); existing.add(sid);
-        }
+        addSubOption(sid, x.name||x.id);
       });
     }
   }catch(e){ document.getElementById('stxt').textContent='Connection error'; }
@@ -479,7 +485,7 @@ async function refreshHeader(){
 async function refreshConnections(){
   try{
     let url=`${API}/api/connections?range=${range}`;
-    if(view==='devices'&&sub&&sub!=='all')       url+=`&source=${encodeURIComponent(sub)}`;
+    if(view==='devices'&&_selectedDevice)          url+=`&source=${encodeURIComponent(_selectedDevice)}`;
     else if(view==='interfaces'&&sub&&sub!=='all') url+=`&iface=${sub}`;
     connData=await fetch(url).then(r=>r.json());
     maxBytes=Math.max(1,...connData.map(r=>r.total_bytes||0));
@@ -574,34 +580,29 @@ function renderDevices(){
   const body=document.getElementById('dev-body');
   const empty=document.getElementById('dev-empty');
 
-  // Populate sub-tabs for devices
+  // Populate sub-select for devices: unique groups
   if(view==='devices'){
-    const tabEl=document.getElementById('sub-tabs');
-    const existing=new Set([...tabEl.querySelectorAll('[data-sub]')].map(b=>b.dataset.sub));
-    sorted.forEach(d=>{
-      if(!existing.has(d.ip)){
-        const btn=document.createElement('button');
-        btn.dataset.sub=d.ip;
-        btn.textContent=devDisplayName(d);
-        btn.addEventListener('click',()=>setSub(d.ip));
-        tabEl.appendChild(btn); existing.add(d.ip);
-      }
-    });
+    const groups=[...new Set(sorted.map(d=>d.fw_group||'').filter(Boolean))].sort();
+    groups.forEach(g=>addSubOption('group:'+g, '📁 '+g));
   }
 
-  if(!sorted.length){body.innerHTML='';empty.style.display='block';return}
+  // Filter by selected group if applicable
+  const activeGroup=sub.startsWith('group:')?sub.slice(6):null;
+  const visible=activeGroup?sorted.filter(d=>(d.fw_group||'')=== activeGroup):sorted;
+
+  if(!visible.length){body.innerHTML='';empty.style.display='block';return}
   empty.style.display='none';
-  body.innerHTML=sorted.map(d=>{
+  body.innerHTML=visible.map(d=>{
     const disp=devDisplayName(d);
-    const isIP=disp===d.ip;
-    const sub2=d.fw_name&&!labels[d.ip]?`<span class="fw-vendor">via Firewalla</span>`:
-               d.fw_vendor?`<span class="fw-vendor">${d.fw_vendor}</span>`:'';
-    const sel=d.ip===sub?'style="background:rgba(88,166,255,.06)"':'';
-    return `<tr ${sel} onclick="setSub('${d.ip}')" style="cursor:pointer">
+    const sub2=d.fw_vendor&&!labels[d.ip]?`<span class="fw-vendor">${d.fw_vendor}</span>`:'';
+    const groupBadge=d.fw_group?`<span class="b-group">${d.fw_group}</span>`:'';
+    const rowSel=d.ip===_selectedDevice?'style="background:rgba(88,166,255,.06)"':'';
+    return `<tr ${rowSel} onclick="selectDevice('${d.ip}')" style="cursor:pointer">
       <td><div class="hcell">
         <span class="hn">${disp} ${labelHtml(d.ip)}</span>
         <span class="ips">${d.ip}${d.fw_mac?` · ${d.fw_mac}`:''}${sub2?' · ':''} ${sub2}</span>
       </div></td>
+      <td>${groupBadge}</td>
       <td class="bv">${fmtBytes(d.total_bytes)}</td>
       <td class="bv">${fmtBytes(d.tx_bytes)}</td>
       <td class="bv">${fmtBytes(d.rx_bytes)}</td>
@@ -662,15 +663,15 @@ const PANEL_IDS=['conn-card','cont-card','dev-card','tun-card'];
 const VIEW_PANELS={interfaces:'conn-card',containers:'cont-card',devices:['conn-card','dev-card'],cf_tunnel:'tun-card'};
 
 function setView(v){
-  view=v; sub='all';
+  view=v; sub='all'; _selectedDevice=null;
   document.querySelectorAll('#view-btns button').forEach(b=>{
     b.classList.remove('active','act-cf','act-tunnel');
     if(b.dataset.view===v) b.classList.add(v==='cf_tunnel'?'act-tunnel':v==='containers'?'act-cf':'active');
   });
-  // Reset sub-tabs
-  const tabEl=document.getElementById('sub-tabs');
-  tabEl.innerHTML='<button class="active" data-sub="all">All</button>';
-  tabEl.querySelector('[data-sub=all]').addEventListener('click',()=>setSub('all'));
+  // Reset sub-select
+  const selEl=document.getElementById('sub-select');
+  selEl.innerHTML='<option value="all">All</option>';
+  if(v==='interfaces'&&_starlinkAvail) addSubOption('starlink','Starlink WAN');
   document.getElementById('tab-lbl').textContent=
     {interfaces:'Interface',containers:'Container',devices:'Device',cf_tunnel:'Tunnel'}[v]||'';
 
@@ -688,10 +689,16 @@ function setView(v){
 
 function setSub(s){
   sub=s;
-  document.querySelectorAll('#sub-tabs button').forEach(b=>b.classList.toggle('active',b.dataset.sub===s));
+  document.getElementById('sub-select').value=s;
   if(view==='containers') renderContainers();
   if(view==='devices')    renderDevices();
   refreshAll();
+}
+
+function selectDevice(ip){
+  _selectedDevice=ip;
+  renderDevices();
+  refreshChart();
 }
 
 function setRange(r){
@@ -823,15 +830,8 @@ async function checkStatus(){
     const s=await fetch(`${API}/api/status`).then(r=>r.json());
     document.getElementById('ver').textContent='v'+s.version;
     if(s.starlink_available){
-      const tabEl=document.getElementById('sub-tabs');
-      if(!tabEl.querySelector('[data-sub=starlink]')){
-        const btn=document.createElement('button');
-        btn.dataset.sub='starlink';
-        btn.textContent='Starlink WAN';
-        btn.style.borderLeft='2px solid #4ade80';
-        btn.addEventListener('click',()=>setSub('starlink'));
-        tabEl.appendChild(btn);
-      }
+      _starlinkAvail=true;
+      if(view==='interfaces') addSubOption('starlink','Starlink WAN');
     }
   }catch(e){}
 }

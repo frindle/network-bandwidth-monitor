@@ -115,6 +115,7 @@ def init_db():
                 ip         TEXT    NOT NULL DEFAULT '',
                 name       TEXT    NOT NULL DEFAULT '',
                 mac_vendor TEXT    NOT NULL DEFAULT '',
+                group_name TEXT    NOT NULL DEFAULT '',
                 last_active INTEGER NOT NULL DEFAULT 0,
                 updated_at  INTEGER NOT NULL DEFAULT 0
             );
@@ -168,6 +169,11 @@ def _migrate():
                 );
                 CREATE INDEX IF NOT EXISTS idx_fw_devices_ip ON fw_devices(ip);
             """)
+
+        # v0.5 → v0.6: add group_name to fw_devices
+        fw_cols = {r[1] for r in conn.execute("PRAGMA table_info(fw_devices)").fetchall()}
+        if 'group_name' not in fw_cols:
+            conn.execute("ALTER TABLE fw_devices ADD COLUMN group_name TEXT NOT NULL DEFAULT ''")
 
         cols = {r[1] for r in conn.execute("PRAGMA table_info(conn_hourly)").fetchall()}
         if 'source_ip' not in cols:
@@ -483,23 +489,24 @@ def query_starlink_hourly(since: int):
 
 # ── Firewalla devices ─────────────────────────────────────────────────────────
 
-def upsert_fw_device(mac: str, ip: str, name: str, mac_vendor: str, last_active: int):
+def upsert_fw_device(mac: str, ip: str, name: str, mac_vendor: str, last_active: int, group_name: str = ''):
     with _db() as conn:
         conn.execute("""
-            INSERT INTO fw_devices (mac, ip, name, mac_vendor, last_active, updated_at)
-            VALUES (?,?,?,?,?,?)
+            INSERT INTO fw_devices (mac, ip, name, mac_vendor, group_name, last_active, updated_at)
+            VALUES (?,?,?,?,?,?,?)
             ON CONFLICT(mac) DO UPDATE SET
                 ip=excluded.ip, name=excluded.name,
                 mac_vendor=excluded.mac_vendor,
+                group_name=excluded.group_name,
                 last_active=excluded.last_active,
                 updated_at=excluded.updated_at
-        """, (mac, ip, name, mac_vendor, last_active, int(time.time())))
+        """, (mac, ip, name, mac_vendor, group_name, last_active, int(time.time())))
 
 
 def get_fw_device_by_ip(ip: str) -> dict | None:
     with _db() as conn:
         row = conn.execute(
-            "SELECT mac, ip, name, mac_vendor, last_active FROM fw_devices WHERE ip=?", (ip,)
+            "SELECT mac, ip, name, mac_vendor, group_name, last_active FROM fw_devices WHERE ip=?", (ip,)
         ).fetchone()
         return dict(row) if row else None
 
@@ -507,7 +514,7 @@ def get_fw_device_by_ip(ip: str) -> dict | None:
 def get_all_fw_devices() -> list:
     with _db() as conn:
         rows = conn.execute(
-            "SELECT mac, ip, name, mac_vendor, last_active FROM fw_devices ORDER BY name"
+            "SELECT mac, ip, name, mac_vendor, group_name, last_active FROM fw_devices ORDER BY group_name, name"
         ).fetchall()
         return [dict(r) for r in rows]
 
