@@ -268,12 +268,19 @@ def connections():
     # Use Firewalla flow data (all LAN devices) when available; fall back to conntrack
     use_fw = firewalla.available() and db.has_fw_connections(since)
     if use_fw:
+        # Build device name map: IP -> friendly name (label > fw_name > IP)
+        fw_devices  = {d['ip']: d for d in db.get_all_fw_devices() if d['ip']}
+        device_name = lambda ip: (labels.get(ip)
+                                  or (fw_devices[ip]['name'] if ip in fw_devices else None)
+                                  or ip)
         rows = db.query_fw_connections(since, source_ip=source_ip)
         for r in rows:
             ip       = r['remote_ip']
-            # Prefer domain name captured by Firewalla, then reverse DNS, then IP
             hostname = r['domain'] or db.get_dns(ip) or ip
             svc      = _detect_service(r['domain'] or hostname)
+            # Build source device list for refinement tooltip
+            src_ips  = (r['source_ips'] or '').split(',') if r['source_ips'] else []
+            src_names = [device_name(s) for s in src_ips if s]
             result.append({
                 'remote_ip':     ip,
                 'hostname':      hostname,
@@ -286,12 +293,18 @@ def connections():
                 'total_bytes':   r['total_bytes'],
                 'hits':          r['hit_count'],
                 'is_cloudflare': cloudflare.is_cloudflare(ip),
-                'source':        'fw',
+                'source_count':  r['source_count'],
+                'source_names':  src_names,
+                'data_source':   'fw',
             })
     else:
         rows = db.query_connections(iface, since, source_ip=source_ip)
+        known_cont = {c['name'] for c in db.known_containers()}
         for r in rows:
-            hostname = db.get_dns(r['remote_ip']) or r['remote_ip']
+            hostname  = db.get_dns(r['remote_ip']) or r['remote_ip']
+            src       = r.get('source_ip', '')
+            src_names = [c for c in known_cont if src and src in (c,)] or (
+                        [labels.get(src) or src] if src else [])
             result.append({
                 'remote_ip':     r['remote_ip'],
                 'hostname':      hostname,
@@ -304,7 +317,9 @@ def connections():
                 'total_bytes':   r['total_bytes'],
                 'hits':          r['hit_count'],
                 'is_cloudflare': cloudflare.is_cloudflare(r['remote_ip']),
-                'source':        'conntrack',
+                'source_count':  1,
+                'source_names':  src_names,
+                'data_source':   'conntrack',
             })
 
     ips   = [r['remote_ip'] for r in rows[:50]]
