@@ -1,6 +1,6 @@
 """
-Reads eth3 (Starlink WAN) byte counters from the Firewalla via SSH.
-Samples every 30 seconds; stores rate deltas in starlink_bw_raw.
+Reads Firewalla WAN interface counters via SSH (eth0=Cox, eth3=Starlink).
+Samples every 30 seconds; stores per-interface rate deltas in starlink_bw_raw.
 """
 import subprocess
 import threading
@@ -17,7 +17,10 @@ _SSH_OPTS = [
     '-o', 'BatchMode=yes',
 ]
 
-_prev: dict | None = None
+_WAN_IFACES = ('eth0', 'eth3')   # eth0=Cox, eth3=Starlink
+
+_prev: dict          = {}   # iface -> (ts, rx_bytes, tx_bytes)
+_current_rates: dict = {}   # iface -> {rx, tx}  (Bps)
 _lock    = threading.Lock()
 _running = False
 
@@ -30,47 +33,55 @@ def _setting(key):
 
 
 def _fw_ip() -> str:
-    # Use firewalla_ssh_ip if set (needed when firewalla_ip points to a proxy/tunnel).
-    # Falls back to firewalla_ip for direct-connection setups.
     return _setting('firewalla_ssh_ip') or _setting('firewalla_ip')
 
 
-def _read_eth3() -> tuple[int, int] | None:
-    """Returns (rx_bytes, tx_bytes) for eth3 from the Firewalla, or None."""
+def _read_wan() -> dict:
+    """Returns {iface: (rx_bytes, tx_bytes)} for WAN interfaces, via one SSH call."""
     ip = _fw_ip()
     if not ip:
-        return None
+        return {}
+    pattern = '|'.join(f'{i}:' for i in _WAN_IFACES)
     try:
         result = subprocess.run(
-            ['ssh'] + _SSH_OPTS + [f'pi@{ip}', 'grep "eth3:" /proc/net/dev'],
+            ['ssh'] + _SSH_OPTS + [f'pi@{ip}', f'grep -E "{pattern}" /proc/net/dev'],
             capture_output=True, text=True, timeout=8
         )
-        line = result.stdout.strip()
-        if not line:
-            return None
-        # format: eth3: rx_bytes packets ... | tx_bytes packets ...
-        parts = line.split()
-        return int(parts[1]), int(parts[9])
+        out = {}
+        for line in result.stdout.splitlines():
+            line = line.strip()
+            if ':' not in line:
+                continue
+            iface, rest = line.split(':', 1)
+            iface = iface.strip()
+            if iface not in _WAN_IFACES:
+                continue
+            parts = rest.split()
+            if len(parts) < 9:
+                continue
+            out[iface] = (int(parts[0]), int(parts[8]))
+        return out
     except Exception:
-        return None
+        return {}
 
 
 def _sample():
-    global _prev
-    now = int(time.time())
-    cur = _read_eth3()
-    if cur is None:
+    now  = int(time.time())
+    data = _read_wan()
+    if not data:
         return
-    rx_bytes, tx_bytes = cur
+
     with _lock:
-        if _prev is not None:
-            prev_ts, prev_rx, prev_tx = _prev
-            elapsed = now - prev_ts
-            if elapsed > 0 and rx_bytes >= prev_rx and tx_bytes >= prev_tx:
-                rx_rate = (rx_bytes - prev_rx) / elapsed
-                tx_rate = (tx_bytes - prev_tx) / elapsed
-                db.insert_starlink_raw(now, rx_rate, tx_rate)
-        _prev = (now, rx_bytes, tx_bytes)
+        for iface, (rx_bytes, tx_bytes) in data.items():
+            if iface in _prev:
+                prev_ts, prev_rx, prev_tx = _prev[iface]
+                elapsed = now - prev_ts
+                if elapsed > 0 and rx_bytes >= prev_rx and tx_bytes >= prev_tx:
+                    rx_rate = (rx_bytes - prev_rx) / elapsed
+                    tx_rate = (tx_bytes - prev_tx) / elapsed
+                    _current_rates[iface] = {'rx': rx_rate, 'tx': tx_rate}
+                    db.insert_starlink_raw(now, iface, rx_rate, tx_rate)
+            _prev[iface] = (now, rx_bytes, tx_bytes)
 
 
 def _loop():
@@ -83,6 +94,12 @@ def _loop():
 def available() -> bool:
     import os
     return os.path.exists(_SSH_KEY) and bool(_fw_ip())
+
+
+def current_rates() -> dict:
+    """Returns {iface: {rx, tx}} in Bps for all tracked WAN interfaces."""
+    with _lock:
+        return dict(_current_rates)
 
 
 def start():

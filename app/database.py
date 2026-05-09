@@ -99,16 +99,20 @@ def init_db():
                 updated_at INTEGER NOT NULL
             );
             CREATE TABLE IF NOT EXISTS starlink_bw_raw (
-                ts      INTEGER NOT NULL PRIMARY KEY,
+                ts      INTEGER NOT NULL,
+                iface   TEXT    NOT NULL DEFAULT 'eth3',
                 rx_rate REAL    NOT NULL,
-                tx_rate REAL    NOT NULL
+                tx_rate REAL    NOT NULL,
+                PRIMARY KEY (ts, iface)
             );
             CREATE TABLE IF NOT EXISTS starlink_bw_hourly (
-                hour_ts      INTEGER NOT NULL PRIMARY KEY,
+                hour_ts      INTEGER NOT NULL,
+                iface        TEXT    NOT NULL DEFAULT 'eth3',
                 rx_bytes     INTEGER NOT NULL DEFAULT 0,
                 tx_bytes     INTEGER NOT NULL DEFAULT 0,
                 peak_rx_rate REAL    NOT NULL DEFAULT 0,
-                peak_tx_rate REAL    NOT NULL DEFAULT 0
+                peak_tx_rate REAL    NOT NULL DEFAULT 0,
+                PRIMARY KEY (hour_ts, iface)
             );
             CREATE TABLE IF NOT EXISTS fw_devices (
                 mac         TEXT    PRIMARY KEY,
@@ -145,17 +149,50 @@ def _migrate():
         if 'starlink_bw_raw' not in tables:
             conn.executescript("""
                 CREATE TABLE IF NOT EXISTS starlink_bw_raw (
-                    ts      INTEGER NOT NULL PRIMARY KEY,
+                    ts      INTEGER NOT NULL,
+                    iface   TEXT    NOT NULL DEFAULT 'eth3',
                     rx_rate REAL    NOT NULL,
-                    tx_rate REAL    NOT NULL
+                    tx_rate REAL    NOT NULL,
+                    PRIMARY KEY (ts, iface)
                 );
                 CREATE TABLE IF NOT EXISTS starlink_bw_hourly (
-                    hour_ts      INTEGER NOT NULL PRIMARY KEY,
+                    hour_ts      INTEGER NOT NULL,
+                    iface        TEXT    NOT NULL DEFAULT 'eth3',
                     rx_bytes     INTEGER NOT NULL DEFAULT 0,
                     tx_bytes     INTEGER NOT NULL DEFAULT 0,
                     peak_rx_rate REAL    NOT NULL DEFAULT 0,
-                    peak_tx_rate REAL    NOT NULL DEFAULT 0
+                    peak_tx_rate REAL    NOT NULL DEFAULT 0,
+                    PRIMARY KEY (hour_ts, iface)
                 );
+            """)
+
+        # v0.8 → v0.9: add iface column to starlink tables (composite PK)
+        sl_cols = {r[1] for r in conn.execute("PRAGMA table_info(starlink_bw_raw)").fetchall()}
+        if 'iface' not in sl_cols:
+            conn.executescript("""
+                CREATE TABLE starlink_bw_raw_new (
+                    ts      INTEGER NOT NULL,
+                    iface   TEXT    NOT NULL DEFAULT 'eth3',
+                    rx_rate REAL    NOT NULL,
+                    tx_rate REAL    NOT NULL,
+                    PRIMARY KEY (ts, iface)
+                );
+                INSERT INTO starlink_bw_raw_new SELECT ts,'eth3',rx_rate,tx_rate FROM starlink_bw_raw;
+                DROP TABLE starlink_bw_raw;
+                ALTER TABLE starlink_bw_raw_new RENAME TO starlink_bw_raw;
+
+                CREATE TABLE starlink_bw_hourly_new (
+                    hour_ts      INTEGER NOT NULL,
+                    iface        TEXT    NOT NULL DEFAULT 'eth3',
+                    rx_bytes     INTEGER NOT NULL DEFAULT 0,
+                    tx_bytes     INTEGER NOT NULL DEFAULT 0,
+                    peak_rx_rate REAL    NOT NULL DEFAULT 0,
+                    peak_tx_rate REAL    NOT NULL DEFAULT 0,
+                    PRIMARY KEY (hour_ts, iface)
+                );
+                INSERT INTO starlink_bw_hourly_new SELECT hour_ts,'eth3',rx_bytes,tx_bytes,peak_rx_rate,peak_tx_rate FROM starlink_bw_hourly;
+                DROP TABLE starlink_bw_hourly;
+                ALTER TABLE starlink_bw_hourly_new RENAME TO starlink_bw_hourly;
             """)
 
         # v0.3 → v0.4: add fw_devices table
@@ -497,24 +534,34 @@ def get_all_settings(keys: list) -> dict:
 
 # ── Starlink WAN ──────────────────────────────────────────────────────────────
 
-def insert_starlink_raw(ts: int, rx_rate: float, tx_rate: float):
+def insert_starlink_raw(ts: int, iface: str, rx_rate: float, tx_rate: float):
     with _db() as conn:
-        conn.execute("INSERT OR REPLACE INTO starlink_bw_raw VALUES (?,?,?)",
-                     (ts, rx_rate, tx_rate))
+        conn.execute("INSERT OR REPLACE INTO starlink_bw_raw VALUES (?,?,?,?)",
+                     (ts, iface, rx_rate, tx_rate))
 
 
-def query_starlink_raw(since: int):
+def query_starlink_raw(since: int, iface: str | None = None):
     with _db() as conn:
+        if iface:
+            return conn.execute(
+                "SELECT ts, rx_rate, tx_rate FROM starlink_bw_raw WHERE ts>=? AND iface=? ORDER BY ts",
+                (since, iface)
+            ).fetchall()
         return conn.execute(
-            "SELECT ts, rx_rate, tx_rate FROM starlink_bw_raw WHERE ts>=? ORDER BY ts",
+            "SELECT ts, iface, rx_rate, tx_rate FROM starlink_bw_raw WHERE ts>=? ORDER BY ts",
             (since,)
         ).fetchall()
 
 
-def query_starlink_hourly(since: int):
+def query_starlink_hourly(since: int, iface: str | None = None):
     with _db() as conn:
+        if iface:
+            return conn.execute(
+                "SELECT hour_ts, rx_bytes, tx_bytes FROM starlink_bw_hourly WHERE hour_ts>=? AND iface=? ORDER BY hour_ts",
+                (since, iface)
+            ).fetchall()
         return conn.execute(
-            "SELECT hour_ts, rx_bytes, tx_bytes FROM starlink_bw_hourly WHERE hour_ts>=? ORDER BY hour_ts",
+            "SELECT hour_ts, iface, rx_bytes, tx_bytes FROM starlink_bw_hourly WHERE hour_ts>=? ORDER BY hour_ts",
             (since,)
         ).fetchall()
 
@@ -625,13 +672,13 @@ def aggregate_hourly():
         """, (cur_hour,))
 
         conn.execute("""
-            INSERT INTO starlink_bw_hourly (hour_ts,rx_bytes,tx_bytes,peak_rx_rate,peak_tx_rate)
-            SELECT (ts/3600)*3600,
+            INSERT INTO starlink_bw_hourly (hour_ts,iface,rx_bytes,tx_bytes,peak_rx_rate,peak_tx_rate)
+            SELECT (ts/3600)*3600, iface,
                    CAST(SUM(rx_rate*30) AS INTEGER), CAST(SUM(tx_rate*30) AS INTEGER),
                    MAX(rx_rate), MAX(tx_rate)
             FROM starlink_bw_raw WHERE ts<?
-            GROUP BY (ts/3600)*3600
-            ON CONFLICT(hour_ts) DO UPDATE SET
+            GROUP BY (ts/3600)*3600, iface
+            ON CONFLICT(hour_ts,iface) DO UPDATE SET
                 rx_bytes=MAX(starlink_bw_hourly.rx_bytes,excluded.rx_bytes),
                 tx_bytes=MAX(starlink_bw_hourly.tx_bytes,excluded.tx_bytes),
                 peak_rx_rate=MAX(starlink_bw_hourly.peak_rx_rate,excluded.peak_rx_rate),
