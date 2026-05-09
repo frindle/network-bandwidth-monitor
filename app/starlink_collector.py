@@ -30,7 +30,9 @@ def _setting(key):
 
 
 def _fw_ip() -> str:
-    return _setting('firewalla_ip')
+    # Use firewalla_ssh_ip if set (needed when firewalla_ip points to a proxy/tunnel).
+    # Falls back to firewalla_ip for direct-connection setups.
+    return _setting('firewalla_ssh_ip') or _setting('firewalla_ip')
 
 
 def _read_eth3() -> tuple[int, int] | None:

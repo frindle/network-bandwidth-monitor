@@ -156,6 +156,11 @@
       <div class="hint">Default 8834 (local). Use 18834 if tunnelling via SSH or proxy.</div>
     </div>
     <div class="field">
+      <label>Firewalla Direct IP <span style="font-weight:400;text-transform:none;letter-spacing:0">(for Starlink SSH)</span></label>
+      <input type="text" id="fw-ssh-ip" placeholder="10.0.0.1" autocomplete="off">
+      <div class="hint">Actual LAN IP of the Firewalla box — only needed if API IP above is a proxy/tunnel address. Used to SSH in and read Starlink WAN counters.</div>
+    </div>
+    <div class="field">
       <label>API Token</label>
       <input type="password" id="fw-token" placeholder="Leave blank to keep existing" autocomplete="off">
       <div class="hint">
@@ -580,15 +585,7 @@ function renderDevices(){
   const body=document.getElementById('dev-body');
   const empty=document.getElementById('dev-empty');
 
-  // Populate sub-select for devices: unique groups
-  if(view==='devices'){
-    const groups=[...new Set(sorted.map(d=>d.fw_group||'').filter(Boolean))].sort();
-    groups.forEach(g=>addSubOption('group:'+g, '📁 '+g));
-  }
-
-  // Filter by selected group if applicable
-  const activeGroup=sub.startsWith('group:')?sub.slice(6):null;
-  const visible=activeGroup?sorted.filter(d=>(d.fw_group||'')=== activeGroup):sorted;
+  const visible=sorted;
 
   if(!visible.length){body.innerHTML='';empty.style.display='block';return}
   empty.style.display='none';
@@ -668,12 +665,16 @@ function setView(v){
     b.classList.remove('active','act-cf','act-tunnel');
     if(b.dataset.view===v) b.classList.add(v==='cf_tunnel'?'act-tunnel':v==='containers'?'act-cf':'active');
   });
-  // Reset sub-select
+  // Reset sub-select; hide for views that don't need it
   const selEl=document.getElementById('sub-select');
   selEl.innerHTML='<option value="all">All</option>';
   if(v==='interfaces'&&_starlinkAvail) addSubOption('starlink','Starlink WAN');
+  const showSub = v==='interfaces'||v==='containers';
+  document.getElementById('tab-lbl').style.display=showSub?'':'none';
+  selEl.style.display=showSub?'':'none';
+  document.querySelectorAll('.toolbar .div').forEach(d=>d.style.display=showSub?'':'none');
   document.getElementById('tab-lbl').textContent=
-    {interfaces:'Interface',containers:'Container',devices:'Device',cf_tunnel:'Tunnel'}[v]||'';
+    {interfaces:'Interface',containers:'Container'}[v]||'';
 
   // Chart label
   document.getElementById('chart-lbl').textContent=
@@ -748,6 +749,7 @@ async function openSettings(){
   const data=await fetch(`${API}/api/settings`).then(r=>r.json());
   document.getElementById('fw-ip').value         = data.firewalla_ip||'';
   document.getElementById('fw-port').value       = data.firewalla_port||'';
+  document.getElementById('fw-ssh-ip').value     = data.firewalla_ssh_ip||'';
   document.getElementById('fw-token').value      = '';  // never pre-fill token
   document.getElementById('fw-token').placeholder= data.firewalla_token_set
     ? 'Leave blank to keep existing token' : 'Paste token here';
@@ -766,6 +768,7 @@ async function saveSettings(){
   const body={
     firewalla_ip:        document.getElementById('fw-ip').value.trim(),
     firewalla_port:      document.getElementById('fw-port').value.trim(),
+    firewalla_ssh_ip:    document.getElementById('fw-ssh-ip').value.trim(),
     firewalla_token:     document.getElementById('fw-token').value.trim(),
     local_subnet:        document.getElementById('s-subnet').value.trim(),
     cf_tunnel_container: document.getElementById('s-cf-container').value.trim(),
@@ -786,9 +789,10 @@ async function testFw(){
   await fetch(`${API}/api/settings`,{method:'POST',
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify({
-      firewalla_ip:    document.getElementById('fw-ip').value.trim(),
-      firewalla_port:  document.getElementById('fw-port').value.trim(),
-      firewalla_token: document.getElementById('fw-token').value.trim(),
+      firewalla_ip:     document.getElementById('fw-ip').value.trim(),
+      firewalla_port:   document.getElementById('fw-port').value.trim(),
+      firewalla_ssh_ip: document.getElementById('fw-ssh-ip').value.trim(),
+      firewalla_token:  document.getElementById('fw-token').value.trim(),
     })});
   const res=await fetch(`${API}/api/settings/fw_test`).then(r=>r.json());
   el.style.display='';

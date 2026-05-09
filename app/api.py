@@ -292,7 +292,7 @@ def get_labels():
 
 # ── settings ──────────────────────────────────────────────────────────────────
 
-_SETTING_KEYS = ['firewalla_ip', 'firewalla_port', 'firewalla_token', 'local_subnet', 'cf_tunnel_container']
+_SETTING_KEYS = ['firewalla_ip', 'firewalla_port', 'firewalla_token', 'firewalla_ssh_ip', 'local_subnet', 'cf_tunnel_container']
 
 @app.route('/api/settings', methods=['GET'])
 def get_settings():
