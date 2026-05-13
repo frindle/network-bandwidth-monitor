@@ -681,6 +681,46 @@ def status():
     })
 
 
+@app.route('/api/debug')
+def debug():
+    """Diagnostic endpoint to help troubleshoot data collection issues."""
+    import os
+    ct = collector.last_collection_times()
+    now = int(time.time())
+    conntrack_path = os.environ.get('NET_BASE', '/host/net') + '/nf_conntrack'
+    conntrack_exists = os.path.exists(conntrack_path)
+    conntrack_size = os.path.getsize(conntrack_path) if conntrack_exists else 0
+
+    # Check if there's any data in the database
+    since_hour = ((now - 86400) // 3600) * 3600
+    conn_count = len(db.query_connections('all', since_hour, limit=1))
+    fw_conn_count = len(db.query_fw_connections(since_hour, limit=1)) if db.has_fw_connections(since_hour) else 0
+
+    return jsonify({
+        'version': VERSION,
+        'now': now,
+        'docker_available': docker_stats.available(),
+        'docker_running_containers': len(docker_stats.list_running()),
+        'conntrack': {
+            'path': conntrack_path,
+            'exists': conntrack_exists,
+            'size_bytes': conntrack_size,
+        },
+        'collection': {
+            'last_bw_ts': ct['bw'],
+            'last_conn_ts': ct['conn'],
+            'bw_stale_seconds': now - ct['bw'] if ct['bw'] else None,
+            'conn_stale_seconds': now - ct['conn'] if ct['conn'] else None,
+        },
+        'database': {
+            'conn_hourly_has_data': conn_count > 0,
+            'fw_conn_hourly_has_data': fw_conn_count > 0,
+            'conn_sample_count': conn_count,
+            'fw_conn_sample_count': fw_conn_count,
+        },
+    })
+
+
 @app.route('/api/version_check')
 def version_check():
     import urllib.request, json as _json
