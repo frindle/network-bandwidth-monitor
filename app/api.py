@@ -1,3 +1,6 @@
+import atexit
+import os
+import signal
 import time
 
 from flask import Flask, jsonify, render_template, request
@@ -495,7 +498,6 @@ def container_purge():
 
 @app.route('/api/container_purge_inactive', methods=['POST'])
 def container_purge_inactive():
-    active_ids = list(collector.current_rates().keys()) if False else []
     import app.docker_stats as ds
     active_ids = list(ds.current_rates().keys())
     db.purge_all_inactive_containers(active_ids)
@@ -695,6 +697,18 @@ def version_check():
 
 
 # ── startup ────────────────────────────────────────────────────────────────────
+
+def _shutdown(signum, frame):
+    collector.stop()
+    fw_collector.stop()
+    fw_flows_collector.stop()
+    starlink_collector.stop()
+
+# Register shutdown handlers
+atexit.register(_shutdown)
+if os.environ.get('FLASK_ENV') != 'development':
+    signal.signal(signal.SIGTERM, _shutdown)
+    signal.signal(signal.SIGINT, _shutdown)
 
 collector.start()
 fw_collector.start()

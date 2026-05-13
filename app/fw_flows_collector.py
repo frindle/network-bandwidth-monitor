@@ -72,9 +72,10 @@ def _collect():
 
 def start():
     global _running
-    if _running or not fw.available():
-        return
-    _running = True
+    with _lock:
+        if _running or not fw.available():
+            return
+        _running = True
     t = threading.Thread(target=_loop, daemon=True, name='fw_flows_collector')
     t.start()
 

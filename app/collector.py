@@ -286,6 +286,12 @@ def _safe_docker():
         traceback.print_exc()
 
 
+def stop():
+    global _scheduler
+    if _scheduler:
+        _scheduler.shutdown(wait=False)
+
+
 def start():
     global _scheduler
     db.init_db()
