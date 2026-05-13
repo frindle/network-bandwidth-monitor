@@ -1,5 +1,93 @@
 # Changelog
 
+## [0.10.1] - 2026-05-13
+
+### Fixed
+- Connection tracker now fires immediately on startup to seed state (was previously only triggered on the 60s interval, causing the first collection cycle to be lost)
+- Remove unreachable dead-code branch in `container_purge_inactive` that prevented the endpoint from ever working
+- `fw_flows_collector.start()` now holds `_lock` around the running check to prevent duplicate collector threads from racing
+- DNS resolver replaced unbounded thread-per-IP spawning with `ThreadPoolExecutor(max_workers=10)`
+
+### Changed
+- Graceful shutdown: collectors now stop cleanly on SIGTERM/SIGINT (`collector.stop()`, `fw_collector.stop()`, `fw_flows_collector.stop()`, `starlink_collector.stop()`)
+- `starlink_collector` SSH calls now retry 3 times with 1s/2s backoff before failing a sample cycle
+- SSH key path in `starlink_collector` is now configurable via `STARLINK_SSH_KEY` env var (defaults to `/root/.ssh/id_firewalla`)
+
+## [0.10.0] - 2026-05-08
+
+### Added
+- Firewalla flow-based destinations (`fw_conn_hourly`) — all LAN devices tracked, not just Unraid containers, via `/v1/flow` API polled every 5 min
+- `fw_conn_hourly` table with per-destination attribution across all LAN clients
+- Connections table now shows all LAN devices (Firewalla) or Unraid containers only (conntrack), with scope indicator
+- `source_count` and `source_names` in connections API — shows which LAN devices contacted each destination
+- `domain` field captured from Firewalla flows (DNS/SNI hostname)
+- CDN service detection now shows "(via CDN)" suffix for identified CDN traffic
+- Column alignment fixes in connections table (total_bytes right-aligned, port/protocol centered)
+
+### Changed
+- Connections API (`/api/connections`) now prefers Firewalla flow data when available; falls back to conntrack
+- `conn_hourly` source attribution still available for non-Firewalla setups
+
+## [0.9.0] - 2026-05-08
+
+### Added
+- Cox WAN (eth0) tracked alongside Starlink (eth3) in WAN collector — both accessible via `fw_wan_eth0` / `fw_wan_eth3` sub-select
+- Firewalla device groups displayed as badge in Devices table
+- `fw_devices` table now includes `group_name` field from Firewalla API
+- Destinations table limited to top 10 by default with expand/collapse controls
+
+### Changed
+- WAN sub-select shows both "Cox WAN" and "Starlink WAN" as separate options in the Interfaces view
+- Firewalla WAN (eth0) used as authoritative total for the "All" interfaces view when Starlink collector is available
+
+## [0.8.0] - 2026-05-08
+
+### Added
+- `cf_tunnel_hourly` table with protocol and port breakdown for Cloudflare Tunnel traffic
+- Sortable connections and devices tables with ascending/descending toggle
+- Totals section shows last 24h, 7d, 14d, 30d in a single compact table
+- `local_subnet` setting to configure RFC1918 subnet for local/external classification
+
+### Fixed
+- 172.x.x.x Docker internal IPs correctly excluded from device tracking
+- Collection reliability: conntrack now handles IPv6 connections gracefully
+- `iface_for_ip()` routing table parser fixed for newer kernel route formats
+
+## [0.7.0] - 2026-05-08
+
+### Added
+- LAN device bytes from Firewalla (`fw_rx_bytes`, `fw_tx_bytes`) shown for devices not yet seen in conntrack
+- Container deduplication by name — rebuilt containers that keep the same name consolidate history
+- "Purged inactive containers" button to clean up stale container history
+- Auto-close settings modal 1.2s after successful save
+
+### Changed
+- Device display: Firewalla device name shown when no user label is set, before falling back to DNS hostname
+- Active container detection fixed — `docker stats` now properly identifies currently-running vs stopped containers
+- Settings modal now shows separate fields for Firewalla API IP and SSH IP
+
+## [0.6.0] - 2026-05-08
+
+### Added
+- Firewalla device groups (Family, Work, etc.) shown as a filterable badge in Devices view
+- Compact sub-select dropdown for interface/container/device selection
+- `fw_devices` table synced from Firewalla Gold Plus local API every 5 minutes
+
+### Changed
+- Settings modal clarified: separate fields for Unraid IP (API endpoint) and Firewalla IP (direct SSH)
+- Firewalla port defaults to 18834 for SSH-tunnelled access on Unraid, 8834 for direct access
+
+## [0.5.0] - 2026-05-08
+
+### Added
+- Cloudflare Zero Trust tunnel detection — CF tunnel container traffic separated from outbound connections
+- `cf_tunnel_hourly` aggregates tunnel traffic with service IP/port breakdown
+- `is_cloudflare` badge on connections, containers, and devices when traffic routes through Cloudflare
+- Cloudflare IP range checks (7 CIDR ranges) to identify CDN and tunnel destinations
+
+### Changed
+- Connection tracking now correctly attributes Cloudflare tunnel traffic to `cf_tunnel_hourly` instead of `conn_hourly`
+
 ## [0.4.0] - 2026-05-08
 
 ### Added

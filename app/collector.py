@@ -296,6 +296,7 @@ def start():
     global _scheduler
     db.init_db()
     _safe_collect_bandwidth()
+    _safe_collect_connections()
 
     _scheduler = BackgroundScheduler(daemon=True)
     _scheduler.add_job(_safe_collect_bandwidth,   'interval', seconds=10, id='bw')
