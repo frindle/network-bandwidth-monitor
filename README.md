@@ -2,6 +2,8 @@
 
 Docker app for tracking network bandwidth usage and connection destinations over time on all Unraid interfaces.
 
+**Current version:** 0.10.1
+
 ## What it does
 
 - Reads `/proc/net/dev` every 10 s → per-interface RX/TX rates stored in SQLite
@@ -10,6 +12,11 @@ Docker app for tracking network bandwidth usage and connection destinations over
 - Reverse-DNS resolves destination IPs in the background
 - Rolls up raw 10-s samples into hourly aggregates; raw kept 7 days, hourly kept forever
 - Web dashboard at the container IP with bandwidth charts and top-destinations table
+- **Docker container tracking** — per-container bandwidth via Docker stats API
+- **Cloudflare Zero Trust tunnel detection** — separate tracking for tunnel-forwarded traffic
+- **Firewalla Gold Plus integration** — all LAN devices tracked via flow API, not just Unraid containers
+- **Device labeling** — name your devices (Plex, Deluge, etc.) for easier identification
+- **Starlink/Cox WAN tracking** — SSH into Firewalla to read WAN interface counters
 
 ## Unraid setup
 
@@ -44,15 +51,31 @@ docker compose up -d --build
 
 Navigate to `http://10.0.9.47:8080` in your browser.
 
+## Environment variables
+
+| Variable                | Default                    | Description                                    |
+|-------------------------|----------------------------|------------------------------------------------|
+| `DB_PATH`               | `/data/netmon.db`          | SQLite database path                           |
+| `NET_BASE`              | `/host/net`                | Base path for `/proc/net` files                |
+| `LOCAL_SUBNET`          | `10.0.0.0/20`             | RFC1918 subnet for local/external classification|
+| `IGNORE_INTERFACES`     | (empty)                    | Comma-separated interface names to skip         |
+| `CF_TUNNEL_CONTAINER`   | `CloudflareTunnel`         | Exact Docker container name for cloudflared     |
+| `STARLINK_SSH_KEY`      | `/root/.ssh/id_firewalla`  | SSH key path for Firewalla WAN counter access   |
+
+## Firewalla integration (optional)
+
+If you have a Firewalla Gold Plus device, you can enable:
+
+- **All LAN devices** — connection tracking for every device on your network, not just Unraid containers
+- **WAN bandwidth** — Cox (eth0) and Starlink (eth3) counters via SSH
+- **Device names** — friendly names from Firewalla's device database
+- **Device groups** — Family, Work, etc. shown as badges
+
+To enable, open the dashboard → Settings → enter your Firewalla IP and API token.
+
 ## Notes
 
 - **conntrack availability**: Connection tracking requires the `nf_conntrack` kernel module (loaded automatically by Docker/iptables on Unraid). If the file doesn't exist, bandwidth stats still work fine — the connections panel will just be empty.
 - **macvlan + shim**: Unraid automatically creates a `shim-br0` interface so the host can reach macvlan container IPs directly. No extra configuration needed.
 - **Data location**: SQLite database is in a named Docker volume (`netmon_data`). Back it up with `docker run --rm -v netmon_data:/data -v $(pwd):/out alpine tar czf /out/netmon_backup.tar.gz /data`.
-
-## Environment variables
-
-| Variable   | Default          | Description                        |
-|------------|------------------|------------------------------------|
-| `DB_PATH`  | `/data/netmon.db`| SQLite database path               |
-| `NET_BASE` | `/host/net`      | Base path for `/proc/net` files    |
+- **Graceful shutdown**: The app now handles SIGTERM/SIGINT signals properly — collectors stop cleanly before the container exits.
