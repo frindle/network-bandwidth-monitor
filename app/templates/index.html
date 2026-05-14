@@ -331,6 +331,15 @@ let _starlinkAvail=false;
 let _selectedDevice=null;
 let _connLimit=10;
 
+// Interface display name mapping (internal name -> friendly name)
+const INTERFACE_DISPLAY_NAMES = {
+  'br0': 'StorageDemon',
+  'bond0': 'StorageDemon',
+};
+function fmtIfName(name) {
+  return INTERFACE_DISPLAY_NAMES[name] || name;
+}
+
 function addSubOption(value,text){
   const sel=document.getElementById('sub-select');
   if([...sel.options].some(o=>o.value===value)) return;
@@ -499,18 +508,22 @@ async function refreshHeader(){
     const allItems=[...wanItems, ...unraidItems];
     document.getElementById('live-rates').innerHTML=allItems
       .filter(x=>(x.rx_mbps||0)>0||(x.tx_mbps||0)>0)
-      .map(x=>`<div class="ri">
-        <span class="rl">${x.name||x.id}${x.is_cloudflare?' ☁':''}</span>
-        <span class="rv c-rx">↓ ${fmtMbps(x.rx_mbps||0)}</span>
-        <span class="rv c-tx">↑ ${fmtMbps(x.tx_mbps||0)}</span>
-      </div>`).join('');
+      .map(x=>{
+        const displayName = (view==='interfaces') ? fmtIfName(x.name||x.id) : (x.name||x.id);
+        return `<div class="ri">
+          <span class="rl">${displayName}${x.is_cloudflare?' ☁':''}</span>
+          <span class="rv c-rx">↓ ${fmtMbps(x.rx_mbps||0)}</span>
+          <span class="rv c-tx">↑ ${fmtMbps(x.tx_mbps||0)}</span>
+        </div>`;
+      }).join('');
     document.getElementById('stxt').textContent=`Live · ${new Date().toLocaleTimeString()}`;
 
     // Populate sub-select for interfaces/containers
     if(view==='interfaces'||view==='containers'){
       data.filter(x=>x.active!==false).forEach(x=>{
         const sid=x.name||x.id;
-        addSubOption(sid, sid);
+        const display = view==='interfaces' ? fmtIfName(sid) : sid;
+        addSubOption(sid, display);
       });
     }
   }catch(e){ document.getElementById('stxt').textContent='Connection error'; }
