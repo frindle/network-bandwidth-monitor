@@ -465,9 +465,9 @@ def containers():
         result.append({'id': cid, 'name': name,
                         'rx_mbps':   round(r.get('rx', 0)*8/1e6, 3),
                         'tx_mbps':   round(r.get('tx', 0)*8/1e6, 3),
-                        'rx_bytes':  t.get('rx_bytes', 0) or 0,
-                        'tx_bytes':  t.get('tx_bytes', 0) or 0,
-                        'total_bytes': t.get('total_bytes', 0) or 0,
+                        'rx_bytes':  t['rx_bytes'] or 0,
+                        'tx_bytes':  t['tx_bytes'] or 0,
+                        'total_bytes': t['total_bytes'] or 0,
                         'is_cloudflare': 'cloudflare' in name.lower(),
                         'active': True})
 
@@ -478,9 +478,9 @@ def containers():
         t = totals.get(c['name'], {})
         result.append({'id': c['id'], 'name': c['name'],
                         'rx_mbps': 0, 'tx_mbps': 0,
-                        'rx_bytes':  t.get('rx_bytes', 0) or 0,
-                        'tx_bytes':  t.get('tx_bytes', 0) or 0,
-                        'total_bytes': t.get('total_bytes', 0) or 0,
+                        'rx_bytes':  t['rx_bytes'] or 0,
+                        'tx_bytes':  t['tx_bytes'] or 0,
+                        'total_bytes': t['total_bytes'] or 0,
                         'is_cloudflare': 'cloudflare' in c['name'].lower(),
                         'active': False})
 
