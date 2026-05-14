@@ -340,15 +340,18 @@ def connections():
 @app.route('/api/devices')
 def devices():
     range_str = request.args.get('range', '24h')
-    rows      = db.query_devices(_since_hour(range_str))
-    labels    = db.get_all_labels()
-    fw_all    = {d['ip']: d for d in db.get_all_fw_devices() if d['ip']}
-    result    = []
-    seen_ips  = set()
+    since      = _since_hour(range_str)
+    rows       = db.query_devices(since)
+    labels     = db.get_all_labels()
+    fw_all     = {d['ip']: d for d in db.get_all_fw_devices() if d['ip']}
+    result     = []
+    seen_ips   = set()
+    fw_used    = set()
 
+    # Primary: devices from conn_hourly (conntrack)
     for r in rows:
         ip      = r['source_ip']
-        if not collector.is_local(ip):   # skip Docker 172.x.x.x and other non-LAN IPs
+        if not collector.is_local(ip):
             continue
         seen_ips.add(ip)
         fw_info = fw_all.get(ip)
@@ -369,7 +372,45 @@ def devices():
             'last_seen':   r['last_seen'],
         })
 
-    # Include Firewalla-known devices that have no conntrack traffic yet
+    # Secondary: pull device traffic from fw_conn_hourly when conn_hourly is empty
+    if not rows and firewalla.available() and db.has_fw_connections(since):
+        fw_rows = db.query_fw_connections(since, limit=2000)
+        device_traffic = {}
+        for r in fw_rows:
+            for src in (r['source_ips'] or '').split(','):
+                src = src.strip()
+                if not src or not collector.is_local(src):
+                    continue
+                if src not in device_traffic:
+                    device_traffic[src] = {'tx': 0, 'rx': 0, 'hits': 0}
+                device_traffic[src]['tx']   += r['tx_bytes'] or 0
+                device_traffic[src]['rx']   += r['rx_bytes'] or 0
+                device_traffic[src]['hits'] += r['hit_count'] or 0
+
+        for ip, d in device_traffic.items():
+            if ip in seen_ips:
+                continue
+            seen_ips.add(ip)
+            fw_used.add(ip)
+            fw_info = fw_all.get(ip)
+            result.append({
+                'ip':          ip,
+                'hostname':    db.get_dns(ip) or ip,
+                'label':       labels.get(ip),
+                'fw_name':     fw_info['name']       if fw_info else None,
+                'fw_mac':      fw_info['mac']        if fw_info else None,
+                'fw_vendor':   fw_info['mac_vendor'] if fw_info else None,
+                'fw_group':    fw_info['group_name'] if fw_info else None,
+                'fw_rx_bytes': fw_info['fw_rx_bytes'] if fw_info else 0,
+                'fw_tx_bytes': fw_info['fw_tx_bytes'] if fw_info else 0,
+                'tx_bytes':    d['tx'],
+                'rx_bytes':    d['rx'],
+                'total_bytes': d['tx'] + d['rx'],
+                'hits':        d['hits'],
+                'last_seen':   fw_info['last_active'] if fw_info else 0,
+            })
+
+    # Tertiary: Firewalla-known devices with no traffic (show last_active)
     for ip, fw in fw_all.items():
         if ip in seen_ips:
             continue
@@ -390,8 +431,9 @@ def devices():
             'last_seen':   fw['last_active'],
         })
 
-    ips   = [r['source_ip'] for r in rows[:50]]
-    stale = db.stale_ips(ips)
+    # Resolve DNS for all device IPs we know about (both conntrack + Firewalla)
+    all_ips = list(seen_ips)
+    stale   = db.stale_ips(all_ips)
     if stale:
         resolver.resolve_batch_async(stale)
     return jsonify(result)
@@ -401,7 +443,10 @@ def devices():
 def device_bandwidth():
     ip        = request.args.get('ip', '')
     range_str = request.args.get('range', '24h')
-    rows      = db.query_device_hourly(ip, _since_hour(range_str))
+    since     = _since_hour(range_str)
+    rows      = db.query_device_hourly(ip, since)
+    if not rows and firewalla.available() and db.has_fw_connections(since):
+        rows = db.query_device_hourly_fw(ip, since)
     data = [{'ts': r['hour_ts'],
              'rx': round(r['rx_bytes']*8/3600/1e6, 3),
              'tx': round(r['tx_bytes']*8/3600/1e6, 3)} for r in rows]

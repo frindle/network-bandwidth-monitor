@@ -418,6 +418,19 @@ def query_device_hourly(source_ip, since_hour):
         """, (source_ip, since_hour)).fetchall()
 
 
+def query_device_hourly_fw(source_ip, since_hour):
+    """Hourly tx/rx from fw_conn_hourly for a specific device IP."""
+    with _db() as conn:
+        return conn.execute("""
+            SELECT hour_ts,
+                   SUM(tx_bytes) AS tx_bytes,
+                   SUM(rx_bytes) AS rx_bytes
+            FROM fw_conn_hourly
+            WHERE source_ip=? AND hour_ts>=?
+            GROUP BY hour_ts ORDER BY hour_ts
+        """, (source_ip, since_hour)).fetchall()
+
+
 # ── CF tunnel ─────────────────────────────────────────────────────────────────
 
 def upsert_cf_tunnel(hour_ts, service_ip, service_port, protocol, tx_delta, rx_delta):
