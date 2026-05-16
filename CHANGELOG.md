@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.10.2] - 2026-05-14
+
+### Fixed
+- Devices view now falls back to Firewalla `fw_conn_hourly` data when `conn_hourly` is empty, and further falls back to `fw_devices` metadata for devices with zero traffic
+- DNS resolution now covers all Firewalla device IPs, not just IPs in `conn_hourly`
+- `/api/device_bandwidth` now falls back to `fw_conn_hourly` when `conn_hourly` has no data for a device; also returns aggregated all-device data when no specific IP is requested
+- Interface sub-select now only shows the 3 intended interfaces (Cox WAN, Starlink WAN, StorageDemon) — previously showed every interface ever recorded including bond0, eth0, eth1
+- Live throughput header (top of page) is now view-independent — always shows all 3 WAN interfaces regardless of which view (Interfaces/Containers/Devices/CF Tunnel) is active
+- `INTERFACE_DISPLAY_NAMES` corrected — `bond0` is no longer aliased to "StorageDemon" (br0 is the correct interface name)
+- Sub-select rebuilt from scratch by `refreshHeader` instead of appended to, eliminating duplicate entries from accumulating
+- `aggregate_hourly` now uses ADD for rx_bytes/tx_bytes instead of MAX, preventing data loss if the scheduler runs twice for the same hour boundary
+- Devices chart in Devices view now shows aggregated "All Devices" data when no specific device is selected
+- `range=all` capped at 1 year (was 10 years, causing unbounded queries on large datasets)
+
 ## [0.10.1] - 2026-05-13
 
 ### Fixed

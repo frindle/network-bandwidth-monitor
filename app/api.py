@@ -15,14 +15,14 @@ import app.firewalla as firewalla
 import app.resolver as resolver
 import app.starlink_collector as starlink_collector
 
-VERSION = '0.10.1'
+VERSION = '0.10.2'
 
 app = Flask(__name__)
 
 _RANGES = {
     '1h':  3600,        '6h':  21600,
     '24h': 86400,       '7d':  7  * 86400,
-    '30d': 30 * 86400,  'all': 10 * 365 * 86400,
+    '30d': 30 * 86400,  'all': 365 * 86400,   # capped at 1 year for hourly data
 }
 _PERIOD_SECONDS = {
     '1d': 86400, '7d': 7*86400, '14d': 14*86400, '30d': 30*86400,
@@ -444,9 +444,14 @@ def device_bandwidth():
     ip        = request.args.get('ip', '')
     range_str = request.args.get('range', '24h')
     since     = _since_hour(range_str)
-    rows      = db.query_device_hourly(ip, since)
-    if not rows and firewalla.available() and db.has_fw_connections(since):
-        rows = db.query_device_hourly_fw(ip, since)
+    if ip:
+        rows = db.query_device_hourly(ip, since)
+        if not rows and firewalla.available() and db.has_fw_connections(since):
+            rows = db.query_device_hourly_fw(ip, since)
+    else:
+        rows = db.query_all_devices_hourly(since)
+        if not rows and firewalla.available() and db.has_fw_connections(since):
+            rows = db.query_all_devices_hourly_fw(since)
     data = [{'ts': r['hour_ts'],
              'rx': round(r['rx_bytes']*8/3600/1e6, 3),
              'tx': round(r['tx_bytes']*8/3600/1e6, 3)} for r in rows]
