@@ -431,6 +431,32 @@ def query_device_hourly_fw(source_ip, since_hour):
         """, (source_ip, since_hour)).fetchall()
 
 
+def query_all_devices_hourly(since_hour):
+    """Aggregated hourly tx/rx across all LAN devices (from conntrack)."""
+    with _db() as conn:
+        return conn.execute("""
+            SELECT hour_ts,
+                   SUM(tx_bytes) AS tx_bytes,
+                   SUM(rx_bytes) AS rx_bytes
+            FROM conn_hourly
+            WHERE hour_ts>=? AND source_ip != ''
+            GROUP BY hour_ts ORDER BY hour_ts
+        """, (since_hour,)).fetchall()
+
+
+def query_all_devices_hourly_fw(since_hour):
+    """Aggregated hourly tx/rx across all LAN devices (from Firewalla flows)."""
+    with _db() as conn:
+        return conn.execute("""
+            SELECT hour_ts,
+                   SUM(tx_bytes) AS tx_bytes,
+                   SUM(rx_bytes) AS rx_bytes
+            FROM fw_conn_hourly
+            WHERE hour_ts>=? AND source_ip != ''
+            GROUP BY hour_ts ORDER BY hour_ts
+        """, (since_hour,)).fetchall()
+
+
 # ── CF tunnel ─────────────────────────────────────────────────────────────────
 
 def upsert_cf_tunnel(hour_ts, service_ip, service_port, protocol, tx_delta, rx_delta):
@@ -768,8 +794,8 @@ def aggregate_hourly():
             FROM bw_raw WHERE ts<?
             GROUP BY (ts/3600)*3600,iface
             ON CONFLICT(hour_ts,iface) DO UPDATE SET
-                rx_bytes=MAX(bw_hourly.rx_bytes,excluded.rx_bytes),
-                tx_bytes=MAX(bw_hourly.tx_bytes,excluded.tx_bytes),
+                rx_bytes=bw_hourly.rx_bytes+excluded.rx_bytes,
+                tx_bytes=bw_hourly.tx_bytes+excluded.tx_bytes,
                 peak_rx_rate=MAX(bw_hourly.peak_rx_rate,excluded.peak_rx_rate),
                 peak_tx_rate=MAX(bw_hourly.peak_tx_rate,excluded.peak_tx_rate)
         """, (cur_hour,))
@@ -784,8 +810,8 @@ def aggregate_hourly():
             GROUP BY (ts/3600)*3600,container_id
             ON CONFLICT(hour_ts,container_id) DO UPDATE SET
                 container_name=excluded.container_name,
-                rx_bytes=MAX(container_bw_hourly.rx_bytes,excluded.rx_bytes),
-                tx_bytes=MAX(container_bw_hourly.tx_bytes,excluded.tx_bytes),
+                rx_bytes=container_bw_hourly.rx_bytes+excluded.rx_bytes,
+                tx_bytes=container_bw_hourly.tx_bytes+excluded.tx_bytes,
                 peak_rx_rate=MAX(container_bw_hourly.peak_rx_rate,excluded.peak_rx_rate),
                 peak_tx_rate=MAX(container_bw_hourly.peak_tx_rate,excluded.peak_tx_rate)
         """, (cur_hour,))
@@ -798,8 +824,8 @@ def aggregate_hourly():
             FROM starlink_bw_raw WHERE ts<?
             GROUP BY (ts/3600)*3600, iface
             ON CONFLICT(hour_ts,iface) DO UPDATE SET
-                rx_bytes=MAX(starlink_bw_hourly.rx_bytes,excluded.rx_bytes),
-                tx_bytes=MAX(starlink_bw_hourly.tx_bytes,excluded.tx_bytes),
+                rx_bytes=starlink_bw_hourly.rx_bytes+excluded.rx_bytes,
+                tx_bytes=starlink_bw_hourly.tx_bytes+excluded.tx_bytes,
                 peak_rx_rate=MAX(starlink_bw_hourly.peak_rx_rate,excluded.peak_rx_rate),
                 peak_tx_rate=MAX(starlink_bw_hourly.peak_tx_rate,excluded.peak_tx_rate)
         """, (cur_hour,))

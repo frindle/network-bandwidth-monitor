@@ -334,7 +334,6 @@ let _connLimit=10;
 // Interface display name mapping (internal name -> friendly name)
 const INTERFACE_DISPLAY_NAMES = {
   'br0': 'StorageDemon',
-  'bond0': 'StorageDemon',
 };
 function fmtIfName(name) {
   return INTERFACE_DISPLAY_NAMES[name] || name;
@@ -449,8 +448,11 @@ async function refreshChart(){
       if(!sub||sub==='all') return;
       url=`${API}/api/container_bandwidth?name=${encodeURIComponent(sub)}&range=${range}`;
     }else if(view==='devices'){
-      if(!_selectedDevice) return;
-      url=`${API}/api/device_bandwidth?ip=${encodeURIComponent(_selectedDevice)}&range=${range}`;
+      if(!_selectedDevice){
+        url=`${API}/api/device_bandwidth?range=${range}`;
+      } else {
+        url=`${API}/api/device_bandwidth?ip=${encodeURIComponent(_selectedDevice)}&range=${range}`;
+      }
     }else if(view==='cf_tunnel'){
       url=`${API}/api/cf_tunnel_bandwidth?range=${range}`;
     }else return;
@@ -495,35 +497,42 @@ async function refreshTotals(){
 /* ── header live rates ───────────────────────────────────────────────────────── */
 async function refreshHeader(){
   try{
-    const endpoint=view==='containers'?'/api/containers':'/api/interfaces';
-    const fetches=[fetch(`${API}${endpoint}`).then(r=>r.json())];
-    if(_starlinkAvail&&view==='interfaces') fetches.push(fetch(`${API}/api/fw_wan_rates`).then(r=>r.json()));
-    const [data, wanRates=[]] = await Promise.all(fetches);
+    const fetches=[fetch(`${API}/api/interfaces`).then(r=>r.json())];
+    if(_starlinkAvail) fetches.push(fetch(`${API}/api/fw_wan_rates`).then(r=>r.json()));
+    if(view==='containers') fetches.push(fetch(`${API}/api/containers`).then(r=>r.json()));
+    const results = await Promise.all(fetches);
+    const ifaceData=results[0];
+    const wanRates=results[1]||[];
+    const contData=view==='containers'?results[2]:[];
 
-    // FW WAN first (authoritative), then br0 only from Unraid (bond0 carries same traffic as br0)
+    // Always show the 3 static interfaces in the live-rates bar (view-independent)
     const wanItems=wanRates.map(w=>({name:w.name,rx_mbps:w.rx_mbps,tx_mbps:w.tx_mbps}));
-    const unraidItems=_starlinkAvail&&view==='interfaces'
-      ? data.filter(x=>x.name==='br0')
-      : data;
-    const allItems=[...wanItems, ...unraidItems];
-    document.getElementById('live-rates').innerHTML=allItems
+    const sdItem=ifaceData.find(x=>x.name==='br0')||ifaceData.find(x=>x.name==='bond0');
+    const sdRate=sdItem?{name:fmtIfName(sdItem.name||sdItem.id),rx_mbps:sdItem.rx_mbps,tx_mbps:sdItem.tx_mbps}:null;
+    const liveItems=[...wanItems];
+    if(sdRate) liveItems.push(sdRate);
+
+    document.getElementById('live-rates').innerHTML=liveItems
       .filter(x=>(x.rx_mbps||0)>0||(x.tx_mbps||0)>0)
-      .map(x=>{
-        const displayName = (view==='interfaces') ? fmtIfName(x.name||x.id) : (x.name||x.id);
-        return `<div class="ri">
-          <span class="rl">${displayName}${x.is_cloudflare?' ☁':''}</span>
+      .map(x=>`<div class="ri">
+          <span class="rl">${x.name}</span>
           <span class="rv c-rx">↓ ${fmtMbps(x.rx_mbps||0)}</span>
           <span class="rv c-tx">↑ ${fmtMbps(x.tx_mbps||0)}</span>
-        </div>`;
-      }).join('');
+        </div>`).join('');
     document.getElementById('stxt').textContent=`Live · ${new Date().toLocaleTimeString()}`;
 
-    // Populate sub-select for interfaces/containers
-    if(view==='interfaces'||view==='containers'){
-      data.filter(x=>x.active!==false).forEach(x=>{
-        const sid=x.name||x.id;
-        const display = view==='interfaces' ? fmtIfName(sid) : sid;
-        addSubOption(sid, display);
+    // Rebuild sub-select from scratch each time
+    const sel=document.getElementById('sub-select');
+    sel.innerHTML='<option value="all">All</option>';
+    if(view==='interfaces'){
+      if(_starlinkAvail){
+        addSubOption('br0','StorageDemon');
+      } else {
+        ifaceData.forEach(x=>addSubOption(x.name||x.id, fmtIfName(x.name||x.id)));
+      }
+    } else if(view==='containers'){
+      contData.filter(c=>c.active!==false).forEach(c=>{
+        addSubOption(c.name||c.id, c.name||c.id);
       });
     }
   }catch(e){ document.getElementById('stxt').textContent='Connection error'; }
@@ -758,10 +767,7 @@ function setView(v){
   // Reset sub-select; hide for views that don't need it
   const selEl=document.getElementById('sub-select');
   selEl.innerHTML='<option value="all">All</option>';
-  if(v==='interfaces'&&_starlinkAvail){
-    addSubOption('fw_wan_eth0','Cox WAN');
-    addSubOption('fw_wan_eth3','Starlink WAN');
-  }
+  // Sub-select options are fully rebuilt by refreshHeader — do NOT add options here
   const showSub = v==='interfaces'||v==='containers';
   document.getElementById('tab-lbl').style.display=showSub?'':'none';
   selEl.style.display=showSub?'':'none';
@@ -794,8 +800,8 @@ function _updateChartLabel(){
     :{containers:'Container Bandwidth',cf_tunnel:'CF Tunnel Traffic'}[view]||'Bandwidth';
   if(view==='devices'){
     const d=_selectedDevice?devData.find(x=>x.ip===_selectedDevice):null;
-    const name=d?(labels[d.ip]||d.fw_name||d.hostname||d.ip):null;
-    document.getElementById('chart-lbl').textContent=name?`Device — ${name}`:'Device Traffic ↙ click a row';
+    const name=d?(labels[d.ip]||d.fw_name||d.hostname||d.ip):'All Devices';
+    document.getElementById('chart-lbl').textContent=`Device — ${name}`;
   } else {
     document.getElementById('chart-lbl').textContent=base;
   }
