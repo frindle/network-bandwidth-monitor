@@ -783,22 +783,28 @@ def stale_ips(ips):
 # ── hourly aggregation ─────────────────────────────────────────────────────────
 
 def aggregate_hourly():
+    # Watermark-based: only aggregate raw rows in [last watermark, current
+    # hour). Without the lower bound this re-added the same raw rows to the
+    # hourly totals on every run (raw is kept 7 days) — up to ~168× inflation.
     cutoff   = int(time.time()) - 7 * 86400
     cur_hour = (int(time.time()) // 3600) * 3600
     with _db() as conn:
+        row = conn.execute("SELECT value FROM settings WHERE key='agg_watermark'").fetchone()
+        watermark = int(row['value']) if row else 0
+
         conn.execute("""
             INSERT INTO bw_hourly (hour_ts,iface,rx_bytes,tx_bytes,peak_rx_rate,peak_tx_rate)
             SELECT (ts/3600)*3600,iface,
                    CAST(SUM(rx_rate*10) AS INTEGER), CAST(SUM(tx_rate*10) AS INTEGER),
                    MAX(rx_rate), MAX(tx_rate)
-            FROM bw_raw WHERE ts<?
+            FROM bw_raw WHERE ts>=? AND ts<?
             GROUP BY (ts/3600)*3600,iface
             ON CONFLICT(hour_ts,iface) DO UPDATE SET
                 rx_bytes=bw_hourly.rx_bytes+excluded.rx_bytes,
                 tx_bytes=bw_hourly.tx_bytes+excluded.tx_bytes,
                 peak_rx_rate=MAX(bw_hourly.peak_rx_rate,excluded.peak_rx_rate),
                 peak_tx_rate=MAX(bw_hourly.peak_tx_rate,excluded.peak_tx_rate)
-        """, (cur_hour,))
+        """, (watermark, cur_hour))
 
         conn.execute("""
             INSERT INTO container_bw_hourly
@@ -806,7 +812,7 @@ def aggregate_hourly():
             SELECT (ts/3600)*3600,container_id,container_name,
                    CAST(SUM(rx_rate*10) AS INTEGER), CAST(SUM(tx_rate*10) AS INTEGER),
                    MAX(rx_rate), MAX(tx_rate)
-            FROM container_bw_raw WHERE ts<?
+            FROM container_bw_raw WHERE ts>=? AND ts<?
             GROUP BY (ts/3600)*3600,container_id
             ON CONFLICT(hour_ts,container_id) DO UPDATE SET
                 container_name=excluded.container_name,
@@ -814,22 +820,85 @@ def aggregate_hourly():
                 tx_bytes=container_bw_hourly.tx_bytes+excluded.tx_bytes,
                 peak_rx_rate=MAX(container_bw_hourly.peak_rx_rate,excluded.peak_rx_rate),
                 peak_tx_rate=MAX(container_bw_hourly.peak_tx_rate,excluded.peak_tx_rate)
-        """, (cur_hour,))
+        """, (watermark, cur_hour))
 
         conn.execute("""
             INSERT INTO starlink_bw_hourly (hour_ts,iface,rx_bytes,tx_bytes,peak_rx_rate,peak_tx_rate)
             SELECT (ts/3600)*3600, iface,
                    CAST(SUM(rx_rate*30) AS INTEGER), CAST(SUM(tx_rate*30) AS INTEGER),
                    MAX(rx_rate), MAX(tx_rate)
-            FROM starlink_bw_raw WHERE ts<?
+            FROM starlink_bw_raw WHERE ts>=? AND ts<?
             GROUP BY (ts/3600)*3600, iface
             ON CONFLICT(hour_ts,iface) DO UPDATE SET
                 rx_bytes=starlink_bw_hourly.rx_bytes+excluded.rx_bytes,
                 tx_bytes=starlink_bw_hourly.tx_bytes+excluded.tx_bytes,
                 peak_rx_rate=MAX(starlink_bw_hourly.peak_rx_rate,excluded.peak_rx_rate),
                 peak_tx_rate=MAX(starlink_bw_hourly.peak_tx_rate,excluded.peak_tx_rate)
-        """, (cur_hour,))
+        """, (watermark, cur_hour))
+
+        conn.execute(
+            "INSERT OR REPLACE INTO settings VALUES ('agg_watermark',?,?)",
+            (str(cur_hour), int(time.time())),
+        )
 
         conn.execute("DELETE FROM bw_raw WHERE ts<?", (cutoff,))
         conn.execute("DELETE FROM container_bw_raw WHERE ts<?", (cutoff,))
         conn.execute("DELETE FROM starlink_bw_raw WHERE ts<?", (cutoff,))
+
+
+def rebuild_hourly_from_raw():
+    """Repair pass for the pre-watermark double-counting bug: for every hour
+    still covered by raw samples, recompute the hourly rows exactly from raw.
+    Hours older than the raw retention window can't be recomputed — they stay
+    inflated and should be interpreted with that in mind (or deleted by hand).
+    Returns the number of hourly rows rebuilt."""
+    rebuilt = 0
+    specs = [
+        ('bw_raw', 'bw_hourly', 'iface', 10),
+        ('container_bw_raw', 'container_bw_hourly', 'container_id', 10),
+        ('starlink_bw_raw', 'starlink_bw_hourly', 'iface', 30),
+    ]
+    cur_hour = (int(time.time()) // 3600) * 3600
+    with _db() as conn:
+        for raw, hourly, key_col, interval in specs:
+            row = conn.execute(f"SELECT MIN(ts) AS m FROM {raw}").fetchone()
+            if not row or row['m'] is None:
+                continue
+            # Only rebuild FULLY-covered hours: when the first raw sample
+            # lands mid-hour, start at the next boundary; a sample exactly on
+            # the boundary means that hour is fully covered.
+            first_ts = row['m']
+            start_hour = first_ts if first_ts % 3600 == 0 else ((first_ts // 3600) + 1) * 3600
+            if start_hour >= cur_hour:
+                continue
+            conn.execute(f"DELETE FROM {hourly} WHERE hour_ts>=? AND hour_ts<?", (start_hour, cur_hour))
+            if raw == 'container_bw_raw':
+                conn.execute("""
+                    INSERT INTO container_bw_hourly
+                        (hour_ts,container_id,container_name,rx_bytes,tx_bytes,peak_rx_rate,peak_tx_rate)
+                    SELECT (ts/3600)*3600,container_id,container_name,
+                           CAST(SUM(rx_rate*10) AS INTEGER), CAST(SUM(tx_rate*10) AS INTEGER),
+                           MAX(rx_rate), MAX(tx_rate)
+                    FROM container_bw_raw WHERE ts>=? AND ts<?
+                    GROUP BY (ts/3600)*3600,container_id
+                """, (start_hour, cur_hour))
+            else:
+                conn.execute(f"""
+                    INSERT INTO {hourly} (hour_ts,{key_col},rx_bytes,tx_bytes,peak_rx_rate,peak_tx_rate)
+                    SELECT (ts/3600)*3600,{key_col},
+                           CAST(SUM(rx_rate*{interval}) AS INTEGER), CAST(SUM(tx_rate*{interval}) AS INTEGER),
+                           MAX(rx_rate), MAX(tx_rate)
+                    FROM {raw} WHERE ts>=? AND ts<?
+                    GROUP BY (ts/3600)*3600,{key_col}
+                """, (start_hour, cur_hour))
+            rebuilt += conn.execute(
+                f"SELECT COUNT(*) AS c FROM {hourly} WHERE hour_ts>=? AND hour_ts<?",
+                (start_hour, cur_hour),
+            ).fetchone()['c']
+        # Aggregation resumes from the current hour; everything before it in
+        # the raw window was just rebuilt exactly.
+        conn.execute(
+            "INSERT OR REPLACE INTO settings VALUES ('agg_watermark',?,?)",
+            (str(cur_hour), int(time.time())),
+        )
+    return rebuilt

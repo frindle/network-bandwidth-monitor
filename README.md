@@ -2,7 +2,7 @@
 
 Docker app for tracking network bandwidth usage and connection destinations over time on all Unraid interfaces.
 
-**Current version:** 0.10.2
+**Current version:** 0.11.0
 
 ## What it does
 

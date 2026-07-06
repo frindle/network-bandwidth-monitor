@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.11.0] - 2026-07-06
+
+### Fixed
+- **Hourly totals were massively inflated (double counting).** `aggregate_hourly` re-summed every raw sample still inside the 7-day retention window on every hourly run, and the upsert added the sums to the existing hourly rows — each hour got re-added up to ~168×. Aggregation is now watermarked (`agg_watermark` setting) so each raw sample is counted exactly once. Applies to `bw_hourly`, `container_bw_hourly`, and `starlink_bw_hourly`.
+- **Connection deltas corrupted for concurrent flows.** The conntrack state key omitted the source port, so simultaneous connections from one device to the same destination:port collapsed into a single entry whose byte counters jumped between flows — busy destinations were systematically undercounted. The flow key now includes sport.
+
+### Added
+- `POST /api/maintenance/rebuild_hourly` — one-shot repair: recomputes every hourly row still covered by raw samples exactly from raw. **Run once after upgrading**: `curl -X POST http://10.0.9.47:8080/api/maintenance/rebuild_hourly`. Hours older than the 7-day raw window cannot be recomputed and remain inflated — interpret pre-upgrade history accordingly.
+
 ## [0.10.2] - 2026-05-14
 
 ### Fixed

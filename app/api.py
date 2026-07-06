@@ -15,7 +15,7 @@ import app.firewalla as firewalla
 import app.resolver as resolver
 import app.starlink_collector as starlink_collector
 
-VERSION = '0.10.2'
+VERSION = '0.11.0'
 
 app = Flask(__name__)
 
@@ -769,6 +769,18 @@ def debug():
             'fw_conn_sample_count': fw_conn_count,
         },
     })
+
+
+@app.route('/api/maintenance/rebuild_hourly', methods=['POST'])
+def rebuild_hourly():
+    """Repair endpoint for the pre-0.11 hourly double-counting bug: rebuilds
+    every hourly row still covered by raw samples exactly from raw. Run once
+    after upgrading. Hours older than the 7-day raw window stay inflated."""
+    try:
+        rebuilt = db.rebuild_hourly_from_raw()
+        return jsonify({'ok': True, 'rows_rebuilt': rebuilt})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
 
 
 @app.route('/api/version_check')

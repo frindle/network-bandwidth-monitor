@@ -165,7 +165,7 @@ def _parse_ct_line(line: str):
     m = _CT_RE.search(line)
     if not m:
         return None
-    src, dst, _sp, dport, orig_bytes, reply_bytes = m.groups()
+    src, dst, sport, dport, orig_bytes, reply_bytes = m.groups()
     return {
         'proto':    proto,
         'src':      src,
@@ -173,7 +173,11 @@ def _parse_ct_line(line: str):
         'dport':    int(dport),
         'tx_bytes': int(orig_bytes),
         'rx_bytes': int(reply_bytes),
-        'key':      (proto, src, dst, int(dport)),
+        # sport must be part of the flow identity: without it, concurrent
+        # connections from one device to the same dst:dport collapse into a
+        # single state entry whose counters jump between flows, corrupting
+        # the deltas (systematic undercount of busy destinations).
+        'key':      (proto, src, int(sport), dst, int(dport)),
     }
 
 
