@@ -12,3 +12,4 @@ venv/
 .memsearch/
 memory/
 *.jsonl
+.DS_Store
