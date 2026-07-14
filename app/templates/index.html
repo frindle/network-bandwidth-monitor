@@ -117,10 +117,6 @@
     .bar-fill{height:100%;border-radius:2px;background:var(--accent)}
     .bv{font-variant-numeric:tabular-nums;min-width:60px;text-align:right}
 
-    .live-dot{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:4px}
-    .live-dot.on{background:var(--rx)}
-    .live-dot.off{background:var(--muted)}
-
     /* label editor */
     .label-wrap{display:inline-flex;align-items:center;gap:4px}
     .label-tag{background:rgba(88,166,255,.2);color:var(--accent);border-radius:4px;padding:1px 6px;font-size:11px;cursor:pointer}
@@ -147,27 +143,9 @@
 
     <div class="section-divider">Firewalla Integration</div>
     <div class="field">
-      <label>Unraid IP <span style="font-weight:400;text-transform:none;letter-spacing:0">(API endpoint)</span></label>
-      <input type="text" id="fw-ip" placeholder="10.0.6.180" autocomplete="off">
-      <div class="hint">IP where the Firewalla API is reachable — your Unraid IP if using an SSH tunnel, or the Firewalla's own IP for direct access.</div>
-    </div>
-    <div class="field">
-      <label>API Port</label>
-      <input type="text" id="fw-port" placeholder="18834" autocomplete="off" style="width:100px">
-      <div class="hint">18834 if tunnelling via SSH on Unraid; 8834 for direct Firewalla access.</div>
-    </div>
-    <div class="field">
-      <label>Firewalla IP <span style="font-weight:400;text-transform:none;letter-spacing:0">(direct SSH)</span></label>
+      <label>Firewalla IP</label>
       <input type="text" id="fw-ssh-ip" placeholder="10.0.0.1" autocomplete="off">
-      <div class="hint">Actual LAN IP of the Firewalla box — used to SSH in and read WAN counters (eth0=Cox, eth3=Starlink). Leave blank if same as above.</div>
-    </div>
-    <div class="field">
-      <label>API Token</label>
-      <input type="password" id="fw-token" placeholder="Leave blank to keep existing" autocomplete="off">
-      <div class="hint">
-        Get via SSH: <code style="background:var(--hover);padding:1px 4px;border-radius:3px;font-size:11px">ssh -p 8822 pi@&lt;ip&gt;</code>
-        then check Firewalla app → Me → Settings for Developer / API Access
-      </div>
+      <div class="hint">LAN IP of the Firewalla box — used for SSH to read device list, flows, and WAN counters.</div>
     </div>
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="testFw()" id="fw-test-btn">Test Connection</button>
@@ -182,9 +160,9 @@
       <div class="hint">Used to distinguish local vs external traffic</div>
     </div>
     <div class="field">
-      <label>CF Tunnel Container Name</label>
-      <input type="text" id="s-cf-container" placeholder="CloudflareTunnel" autocomplete="off">
-      <div class="hint">Exact Docker container name for your cloudflared instance</div>
+      <label>CF Tunnel IP</label>
+      <input type="text" id="s-cf-container" placeholder="10.0.x.x" autocomplete="off">
+      <div class="hint">IP address of the cloudflared container</div>
     </div>
 
     <div class="modal-actions" style="margin-top:22px;border-top:1px solid var(--border);padding-top:16px">
@@ -202,7 +180,6 @@
     <span class="lbl">View</span>
     <div class="bg" id="view-btns">
       <button class="active" data-view="interfaces">Interfaces</button>
-      <button data-view="containers">Containers</button>
       <button data-view="devices">Devices</button>
       <button data-view="cf_tunnel">CF Tunnel</button>
     </div>
@@ -224,7 +201,7 @@
   <!-- period totals -->
   <div id="totals"></div>
 
-  <!-- bandwidth chart (shown for interfaces / containers / devices / cf_tunnel) -->
+  <!-- bandwidth chart -->
   <div class="card" id="chart-card">
     <div class="ch">
       <span class="ct" id="chart-lbl">Bandwidth</span>
@@ -239,7 +216,7 @@
   <!-- connections table (interfaces + devices views) -->
   <div class="card" id="conn-card">
     <div class="ch">
-      <div class="meta"><span class="ct">Top Destinations</span><span class="cnt" id="conn-cnt">0</span><span id="conn-scope" style="font-size:10px;color:var(--muted);margin-left:8px">Unraid containers only</span></div>
+      <div class="meta"><span class="ct">Top Destinations</span><span class="cnt" id="conn-cnt">0</span><span id="conn-scope" style="font-size:10px;color:var(--muted);margin-left:8px">Unraid only</span></div>
     </div>
     <table>
       <thead><tr>
@@ -255,25 +232,6 @@
     </table>
     <div class="empty" id="conn-empty" style="display:none">No connection data yet.</div>
     <div id="conn-expand" style="display:none;text-align:center;padding:8px 0;font-size:12px;color:var(--accent)"></div>
-  </div>
-
-  <!-- containers table -->
-  <div class="card" id="cont-card" style="display:none">
-    <div class="ch">
-      <div class="meta"><span class="ct">Docker Containers</span><span class="cnt" id="cont-cnt">0</span></div>
-      <button class="btn btn-secondary" style="font-size:11px;padding:4px 10px" onclick="purgeAllInactive()" title="Remove all rebuilt/stopped container history">Purge inactive</button>
-    </div>
-    <table>
-      <thead><tr>
-        <th data-ccol="name">Container</th>
-        <th data-ccol="total_bytes" style="text-align:right">24h Total</th>
-        <th data-ccol="rx_mbps" style="text-align:right">↓ Live</th>
-        <th data-ccol="tx_mbps" style="text-align:right">↑ Live</th>
-        <th style="width:24px"></th>
-      </tr></thead>
-      <tbody id="cont-body"></tbody>
-    </table>
-    <div class="empty" id="cont-empty" style="display:none">Docker socket not available or no containers running.</div>
   </div>
 
   <!-- devices table -->
@@ -313,7 +271,7 @@
       </tr></thead>
       <tbody id="tun-body"></tbody>
     </table>
-    <div class="empty" id="tun-empty" style="display:none">No tunnel traffic detected yet. CloudflareTunnel container must be running.</div>
+    <div class="empty" id="tun-empty" style="display:none">No tunnel traffic detected yet. CF Tunnel IP must be configured in Settings.</div>
   </div>
 </main>
 
@@ -323,8 +281,7 @@ let view='interfaces', sub='all', range='24h';
 let sortConn='total_bytes', sortConnDir='desc';
 let sortDev='fw_group',     sortDevDir='asc';
 let sortTun='total_bytes',  sortTunDir='desc';
-let sortCont='total_bytes', sortContDir='desc';
-let connData=[], devData=[], tunData=[], contData=[];
+let connData=[], devData=[], tunData=[];
 let maxBytes=1, labels={};
 let chart=null;
 let _starlinkAvail=false;
@@ -444,9 +401,6 @@ async function refreshChart(){
         const iface=sub==='all'?'bond0':sub;
         url=`${API}/api/bandwidth?iface=${iface}&range=${range}`;
       }
-    }else if(view==='containers'){
-      if(!sub||sub==='all') return;
-      url=`${API}/api/container_bandwidth?name=${encodeURIComponent(sub)}&range=${range}`;
     }else if(view==='devices'){
       if(!_selectedDevice){
         url=`${API}/api/device_bandwidth?range=${range}`;
@@ -467,7 +421,7 @@ async function refreshChart(){
 /* ── totals ─────────────────────────────────────────────────────────────────── */
 async function refreshTotals(){
   try{
-    const subject=view==='containers'?'containers':'interfaces';
+    const subject='interfaces';
     const data=await fetch(`${API}/api/totals?subject=${subject}`).then(r=>r.json());
     const labels2=[['1d','Last 24h'],['7d','Last 7d'],['14d','Last 14d'],['30d','Last 30d']];
     const cols=labels2.map(([k,lbl])=>{
@@ -499,11 +453,9 @@ async function refreshHeader(){
   try{
     const fetches=[fetch(`${API}/api/interfaces`).then(r=>r.json())];
     if(_starlinkAvail) fetches.push(fetch(`${API}/api/fw_wan_rates`).then(r=>r.json()));
-    if(view==='containers') fetches.push(fetch(`${API}/api/containers`).then(r=>r.json()));
     const results = await Promise.all(fetches);
     const ifaceData=results[0];
     const wanRates=results[1]||[];
-    const contData=view==='containers'?results[2]:[];
 
     // Always show the 3 static interfaces in the live-rates bar (view-independent)
     const wanItems=wanRates.map(w=>({name:w.name,rx_mbps:w.rx_mbps,tx_mbps:w.tx_mbps}));
@@ -530,10 +482,6 @@ async function refreshHeader(){
       } else {
         ifaceData.forEach(x=>addSubOption(x.name||x.id, fmtIfName(x.name||x.id)));
       }
-    } else if(view==='containers'){
-      contData.filter(c=>c.active!==false).forEach(c=>{
-        addSubOption(c.name||c.id, c.name||c.id);
-      });
     }
   }catch(e){ document.getElementById('stxt').textContent='Connection error'; }
 }
@@ -550,7 +498,7 @@ async function refreshConnections(){
     connData=Array.isArray(payload)?payload:(payload.data||[]);
     const src=payload.source||'conntrack';
     document.getElementById('conn-scope').textContent=
-      src==='fw'?'All LAN devices (Firewalla)':'Unraid containers only';
+      src==='fw'?'All LAN devices (Firewalla)':'Unraid only';
     maxBytes=Math.max(1,...connData.map(r=>r.total_bytes||0));
     renderConn();
   }catch(e){console.error('conn',e)}
@@ -607,46 +555,6 @@ function renderConn(){
   } else {
     expEl.style.display='none';
   }
-}
-
-/* ── containers ──────────────────────────────────────────────────────────────── */
-async function refreshContainers(){
-  try{
-    contData=await fetch(`${API}/api/containers`).then(r=>r.json());
-    renderContainers();
-  }catch(e){console.error('cont',e)}
-}
-
-function renderContainers(){
-  const dir=sortContDir==='asc'?1:-1;
-  const sorted=[...contData].sort((a,b)=>{
-    const av=a[sortCont]??0,bv=b[sortCont]??0;
-    return typeof av==='string'?dir*av.localeCompare(bv):dir*(av-bv);
-  });
-  document.querySelectorAll('#cont-card thead th[data-ccol]').forEach(th=>{
-    th.classList.remove('asc','desc');
-    if(th.dataset.ccol===sortCont) th.classList.add(sortContDir);
-  });
-  const body=document.getElementById('cont-body');
-  const empty=document.getElementById('cont-empty');
-  document.getElementById('cont-cnt').textContent=contData.length;
-  if(!contData.length){body.innerHTML='';empty.style.display='block';return}
-  empty.style.display='none';
-  body.innerHTML=sorted.map(c=>{
-    const sel=(c.name||c.id)===sub?'style="background:rgba(88,166,255,.06)"':'';
-    const dimmed=!c.active?'style="opacity:.5"':'';
-    const cfBadge=c.is_cloudflare?'<span class="badge b-cf" style="font-size:9px;margin-left:4px">CF</span>':'';
-    const removeBtn=!c.active
-      ?`<td style="text-align:right"><span style="cursor:pointer;color:var(--muted);font-size:12px" title="Remove from history" onclick="event.stopPropagation();purgeContainer('${c.id}','${c.name}')">✕</span></td>`
-      :'<td></td>';
-    return `<tr ${sel} ${dimmed} onclick="setSub('${c.name||c.id}')" style="cursor:pointer">
-      <td><span class="live-dot ${c.active?'on':'off'}"></span>${c.name}${cfBadge}</td>
-      <td class="bv" style="text-align:right">${c.total_bytes?fmtBytes(c.total_bytes):'—'}</td>
-      <td class="bv" style="text-align:right;color:var(--rx)">${fmtMbps(c.rx_mbps)}</td>
-      <td class="bv" style="text-align:right;color:var(--tx)">${fmtMbps(c.tx_mbps)}</td>
-      ${removeBtn}
-    </tr>`;
-  }).join('');
 }
 
 /* ── devices ─────────────────────────────────────────────────────────────────── */
@@ -755,25 +663,24 @@ function renderTunnel(){
 }
 
 /* ── view switching ──────────────────────────────────────────────────────────── */
-const PANEL_IDS=['conn-card','cont-card','dev-card','tun-card'];
-const VIEW_PANELS={interfaces:'conn-card',containers:'cont-card',devices:['conn-card','dev-card'],cf_tunnel:'tun-card'};
+const PANEL_IDS=['conn-card','dev-card','tun-card'];
+const VIEW_PANELS={interfaces:'conn-card',devices:['conn-card','dev-card'],cf_tunnel:'tun-card'};
 
 function setView(v){
   view=v; sub='all'; _selectedDevice=null;
   document.querySelectorAll('#view-btns button').forEach(b=>{
     b.classList.remove('active','act-cf','act-tunnel');
-    if(b.dataset.view===v) b.classList.add(v==='cf_tunnel'?'act-tunnel':v==='containers'?'act-cf':'active');
+    if(b.dataset.view===v) b.classList.add(v==='cf_tunnel'?'act-tunnel':'active');
   });
   // Reset sub-select; hide for views that don't need it
   const selEl=document.getElementById('sub-select');
   selEl.innerHTML='<option value="all">All</option>';
   // Sub-select options are fully rebuilt by refreshHeader — do NOT add options here
-  const showSub = v==='interfaces'||v==='containers';
+  const showSub = v==='interfaces';
   document.getElementById('tab-lbl').style.display=showSub?'':'none';
   selEl.style.display=showSub?'':'none';
   document.querySelectorAll('.toolbar .div').forEach(d=>d.style.display=showSub?'':'none');
-  document.getElementById('tab-lbl').textContent=
-    {interfaces:'Interface',containers:'Container'}[v]||'';
+  document.getElementById('tab-lbl').textContent=showSub?'Interface':'';
 
   // Chart label
   _updateChartLabel();
@@ -789,7 +696,6 @@ function setView(v){
 function setSub(s){
   sub=s;
   document.getElementById('sub-select').value=s;
-  if(view==='containers') renderContainers();
   if(view==='devices')    renderDevices();
   refreshAll();
 }
@@ -797,7 +703,7 @@ function setSub(s){
 function _updateChartLabel(){
   const base=view==='interfaces'
     ?(sub==='all'&&_starlinkAvail?'WAN Bandwidth (Cox via Firewalla)':sub.startsWith('fw_wan_')?`${sub==='fw_wan_eth0'?'Cox':'Starlink'} WAN (Firewalla)`:'Bandwidth')
-    :{containers:'Container Bandwidth',cf_tunnel:'CF Tunnel Traffic'}[view]||'Bandwidth';
+    :{cf_tunnel:'CF Tunnel Traffic'}[view]||'Bandwidth';
   if(view==='devices'){
     const d=_selectedDevice?devData.find(x=>x.ip===_selectedDevice):null;
     const name=d?(labels[d.ip]||d.fw_name||d.hostname||d.ip):'All Devices';
@@ -824,7 +730,6 @@ function setRange(r){
 async function refreshAll(){
   const tasks=[refreshHeader(),refreshChart(),refreshTotals()];
   if(view==='interfaces')  tasks.push(refreshConnections());
-  if(view==='containers')  tasks.push(refreshContainers());
   if(view==='devices')     tasks.push(refreshDevices(),refreshConnections());
   if(view==='cf_tunnel')   tasks.push(refreshTunnel());
   await Promise.all(tasks);
@@ -849,13 +754,6 @@ document.getElementById('tun-card').addEventListener('click',e=>{
   sortTunDir=sortTun===th.dataset.tcol?(sortTunDir==='desc'?'asc':'desc'):'desc';
   sortTun=th.dataset.tcol; renderTunnel();
 });
-document.getElementById('cont-card').addEventListener('click',e=>{
-  const th=e.target.closest('th[data-ccol]');
-  if(!th) return;
-  sortContDir=sortCont===th.dataset.ccol?(sortContDir==='desc'?'asc':'desc'):'desc';
-  sortCont=th.dataset.ccol; renderContainers();
-});
-
 document.getElementById('view-btns').addEventListener('click',e=>{
   if(e.target.matches('button')) setView(e.target.dataset.view);
 });
@@ -866,14 +764,9 @@ document.getElementById('range-btns').addEventListener('click',e=>{
 /* ── settings modal ──────────────────────────────────────────────────────────── */
 async function openSettings(){
   const data=await fetch(`${API}/api/settings`).then(r=>r.json());
-  document.getElementById('fw-ip').value         = data.firewalla_ip||'';
-  document.getElementById('fw-port').value       = data.firewalla_port||'';
   document.getElementById('fw-ssh-ip').value     = data.firewalla_ssh_ip||'';
-  document.getElementById('fw-token').value      = '';  // never pre-fill token
-  document.getElementById('fw-token').placeholder= data.firewalla_token_set
-    ? 'Leave blank to keep existing token' : 'Paste token here';
   document.getElementById('s-subnet').value      = data.local_subnet||'';
-  document.getElementById('s-cf-container').value= data.cf_tunnel_container||'';
+  document.getElementById('s-cf-container').value= data.cf_tunnel_ip||'';
   document.getElementById('fw-test-result').style.display='none';
   document.getElementById('save-result').style.display='none';
   document.getElementById('settings-modal').classList.add('open');
@@ -885,12 +778,9 @@ function closeSettings(){
 
 async function saveSettings(){
   const body={
-    firewalla_ip:        document.getElementById('fw-ip').value.trim(),
-    firewalla_port:      document.getElementById('fw-port').value.trim(),
     firewalla_ssh_ip:    document.getElementById('fw-ssh-ip').value.trim(),
-    firewalla_token:     document.getElementById('fw-token').value.trim(),
     local_subnet:        document.getElementById('s-subnet').value.trim(),
-    cf_tunnel_container: document.getElementById('s-cf-container').value.trim(),
+    cf_tunnel_ip: document.getElementById('s-cf-container').value.trim(),
   };
   const res=await fetch(`${API}/api/settings`,{method:'POST',
     headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
@@ -908,29 +798,13 @@ async function testFw(){
   await fetch(`${API}/api/settings`,{method:'POST',
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify({
-      firewalla_ip:     document.getElementById('fw-ip').value.trim(),
-      firewalla_port:   document.getElementById('fw-port').value.trim(),
       firewalla_ssh_ip: document.getElementById('fw-ssh-ip').value.trim(),
-      firewalla_token:  document.getElementById('fw-token').value.trim(),
     })});
   const res=await fetch(`${API}/api/settings/fw_test`).then(r=>r.json());
   el.style.display='';
   el.className='test-result '+(res.ok?'test-ok':'test-fail');
   el.textContent=res.message;
   btn.disabled=false; btn.textContent='Test Connection';
-}
-
-async function purgeContainer(id, name){
-  if(!confirm(`Remove "${name}" history from database?`)) return;
-  await fetch(`${API}/api/container_purge`,{method:'POST',
-    headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});
-  await refreshContainers();
-}
-
-async function purgeAllInactive(){
-  if(!confirm('Remove all inactive/rebuilt container history?')) return;
-  await fetch(`${API}/api/container_purge_inactive`,{method:'POST'});
-  await refreshContainers();
 }
 
 async function syncFw(){
@@ -942,8 +816,7 @@ async function syncFw(){
   await fetch(`${API}/api/settings`,{method:'POST',
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify({
-      firewalla_ip:   document.getElementById('fw-ip').value.trim(),
-      firewalla_port: document.getElementById('fw-port').value.trim(),
+      firewalla_ssh_ip: document.getElementById('fw-ssh-ip').value.trim(),
     })});
   const res=await fetch(`${API}/api/settings/fw_sync`,{method:'POST'}).then(r=>r.json());
   el.style.display='';

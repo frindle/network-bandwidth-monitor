@@ -8,14 +8,13 @@ from flask import Flask, jsonify, render_template, request
 import app.cloudflare as cloudflare
 import app.collector as collector
 import app.database as db
-import app.docker_stats as docker_stats
 import app.fw_collector as fw_collector
 import app.fw_flows_collector as fw_flows_collector
 import app.firewalla as firewalla
 import app.resolver as resolver
 import app.starlink_collector as starlink_collector
 
-VERSION = '0.11.0'
+VERSION = '0.12.0'
 
 app = Flask(__name__)
 
@@ -247,15 +246,11 @@ def bandwidth():
 
 @app.route('/api/totals')
 def totals():
-    subject = request.args.get('subject', 'interfaces')
     result  = {}
     for label, seconds in _PERIOD_SECONDS.items():
         sh = ((int(time.time()) - seconds) // 3600) * 3600
-        if subject == 'interfaces':
-            rows = [dict(r) for r in db.query_totals_by_iface(sh)]
-            rows += db.query_totals_by_fw_wan(sh)   # add Cox WAN / Starlink WAN rows
-        else:
-            rows = [dict(r) for r in db.query_totals_by_container(sh)]
+        rows = [dict(r) for r in db.query_totals_by_iface(sh)]
+        rows += db.query_totals_by_fw_wan(sh)   # add Cox WAN / Starlink WAN rows
         result[label] = rows
     return jsonify(result)
 
@@ -305,12 +300,12 @@ def connections():
             })
     else:
         rows = db.query_connections(iface, since, source_ip=source_ip)
-        known_cont = {c['name'] for c in db.known_containers()}
+        fw_devices  = {d['ip']: d for d in db.get_all_fw_devices() if d['ip']}
         for r in rows:
             hostname  = db.get_dns(r['remote_ip']) or r['remote_ip']
             src       = r.get('source_ip', '')
-            src_names = [c for c in known_cont if src and src in (c,)] or (
-                        [labels.get(src) or src] if src else [])
+            src_names = ([labels.get(src) or (fw_devices[src]['name'] if src in fw_devices else src)]
+                         if src else [])
             result.append({
                 'remote_ip':     r['remote_ip'],
                 'hostname':      hostname,
@@ -493,84 +488,6 @@ def cf_tunnel_bandwidth():
     return jsonify(data)
 
 
-# ── containers ─────────────────────────────────────────────────────────────────
-
-@app.route('/api/containers')
-def containers():
-    running    = docker_stats.list_running()   # {id: name}
-    rates      = docker_stats.current_rates()  # {id: {name,rx,tx}}
-    known      = db.known_containers()         # [{id,name}]
-    since_hour = _since_hour('24h')
-    totals     = {r['container_name']: r for r in db.query_totals_by_container(since_hour)}
-
-    seen_names = set()
-    result = []
-
-    for cid, name in running.items():
-        if name in seen_names:
-            continue
-        seen_names.add(name)
-        r = rates.get(cid, {})
-        t = totals.get(name, {})
-        result.append({'id': cid, 'name': name,
-                        'rx_mbps':   round(r.get('rx', 0)*8/1e6, 3),
-                        'tx_mbps':   round(r.get('tx', 0)*8/1e6, 3),
-                        'rx_bytes':  t['rx_bytes'] or 0,
-                        'tx_bytes':  t['tx_bytes'] or 0,
-                        'total_bytes': t['total_bytes'] or 0,
-                        'is_cloudflare': 'cloudflare' in name.lower(),
-                        'active': True})
-
-    for c in known:
-        if c['name'] in seen_names:
-            continue
-        seen_names.add(c['name'])
-        t = totals.get(c['name'], {})
-        result.append({'id': c['id'], 'name': c['name'],
-                        'rx_mbps': 0, 'tx_mbps': 0,
-                        'rx_bytes':  t['rx_bytes'] or 0,
-                        'tx_bytes':  t['tx_bytes'] or 0,
-                        'total_bytes': t['total_bytes'] or 0,
-                        'is_cloudflare': 'cloudflare' in c['name'].lower(),
-                        'active': False})
-
-    result.sort(key=lambda x: (not x['active'], -(x['total_bytes'] or 0)))
-    return jsonify(result)
-
-
-@app.route('/api/container_purge', methods=['POST'])
-def container_purge():
-    cid = request.get_json(force=True).get('id', '').strip()
-    if not cid:
-        return jsonify({'error': 'id required'}), 400
-    db.purge_container(cid)
-    return jsonify({'ok': True})
-
-@app.route('/api/container_purge_inactive', methods=['POST'])
-def container_purge_inactive():
-    import app.docker_stats as ds
-    active_ids = list(ds.current_rates().keys())
-    db.purge_all_inactive_containers(active_ids)
-    return jsonify({'ok': True})
-
-@app.route('/api/container_bandwidth')
-def container_bandwidth():
-    name      = request.args.get('name') or request.args.get('id', '')
-    range_str = request.args.get('range', '24h')
-    use_raw   = range_str in ('1h', '6h', '24h')
-    if use_raw:
-        rows = db.query_container_bw_raw(name, _since(range_str))
-        data = [{'ts': r['ts'],
-                 'rx': round(r['rx_rate']*8/1e6, 3),
-                 'tx': round(r['tx_rate']*8/1e6, 3)} for r in rows]
-    else:
-        rows = db.query_container_bw_hourly(name, _since(range_str))
-        data = [{'ts': r['hour_ts'],
-                 'rx': round(r['rx_bytes']*8/3600/1e6, 3),
-                 'tx': round(r['tx_bytes']*8/3600/1e6, 3)} for r in rows]
-    return jsonify(data)
-
-
 # ── device labels ──────────────────────────────────────────────────────────────
 
 @app.route('/api/label', methods=['POST'])
@@ -591,15 +508,11 @@ def get_labels():
 
 # ── settings ──────────────────────────────────────────────────────────────────
 
-_SETTING_KEYS = ['firewalla_ip', 'firewalla_port', 'firewalla_token', 'firewalla_ssh_ip', 'local_subnet', 'cf_tunnel_container']
+_SETTING_KEYS = ['firewalla_ip', 'firewalla_ssh_ip', 'local_subnet', 'cf_tunnel_ip']
 
 @app.route('/api/settings', methods=['GET'])
 def get_settings():
     vals = db.get_all_settings(_SETTING_KEYS)
-    # Mask token — send a boolean so UI knows if it's set, not the value
-    if 'firewalla_token' in vals:
-        vals['firewalla_token_set'] = True
-        vals['firewalla_token'] = ''
     return jsonify(vals)
 
 @app.route('/api/settings', methods=['POST'])
@@ -608,9 +521,6 @@ def save_settings():
     for key in _SETTING_KEYS:
         if key in body:
             val = body[key].strip() if body[key] else None
-            # Don't overwrite token if blank was sent (masked field)
-            if key == 'firewalla_token' and not val:
-                continue
             db.set_setting(key, val)
     return jsonify({'ok': True})
 
@@ -724,7 +634,6 @@ def status():
     ct = collector.last_collection_times()
     return jsonify({
         'ok': True, 'version': VERSION, 'ts': int(time.time()),
-        'docker_available': docker_stats.available(),
         'starlink_available': starlink_collector.available(),
         'last_bw_ts': ct['bw'],
         'last_conn_ts': ct['conn'],
@@ -749,8 +658,6 @@ def debug():
     return jsonify({
         'version': VERSION,
         'now': now,
-        'docker_available': docker_stats.available(),
-        'docker_running_containers': len(docker_stats.list_running()),
         'conntrack': {
             'path': conntrack_path,
             'exists': conntrack_exists,

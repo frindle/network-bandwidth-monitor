@@ -8,14 +8,13 @@ import time
 from apscheduler.schedulers.background import BackgroundScheduler
 
 import app.database as db
-import app.docker_stats as docker_stats
 
 NET_BASE      = os.environ.get('NET_BASE', '/host/net')
 NET_DEV       = f'{NET_BASE}/dev'
 NET_CONNTRACK = f'{NET_BASE}/nf_conntrack'
 NET_ROUTE     = f'{NET_BASE}/route'
 
-_CF_CONTAINER = os.environ.get('CF_TUNNEL_CONTAINER', 'CloudflareTunnel')
+_CF_TUNNEL_IP = os.environ.get('CF_TUNNEL_IP', '')
 
 # Comma-separated interface names to exclude from bandwidth tracking
 _IGNORE_IFACES = set(
@@ -186,8 +185,9 @@ def collect_connections():
     hour_ts = (now // 3600) * 3600
     routes  = _read_routes()
 
-    # Get CloudflareTunnel container IPs (refresh each cycle in case container restarts)
-    cf_ips = set(docker_stats.get_container_ips(_CF_CONTAINER)) if docker_stats.available() else set()
+    # CF tunnel container IP — static via macvlan, set in .env or DB setting
+    cf_ip = _CF_TUNNEL_IP or db.get_setting('cf_tunnel_ip', '')
+    cf_ips = {cf_ip} if cf_ip else set()
 
     try:
         with open(NET_CONNTRACK) as f:
@@ -282,14 +282,6 @@ def _safe_aggregate():
         traceback.print_exc()
 
 
-def _safe_docker():
-    try:
-        docker_stats.collect_docker_stats()
-    except Exception:
-        import traceback
-        traceback.print_exc()
-
-
 def stop():
     global _scheduler
     if _scheduler:
@@ -306,7 +298,4 @@ def start():
     _scheduler.add_job(_safe_collect_bandwidth,   'interval', seconds=10, id='bw')
     _scheduler.add_job(_safe_collect_connections, 'interval', seconds=60, id='conn')
     _scheduler.add_job(_safe_aggregate,           'interval', hours=1,   id='agg')
-    if docker_stats.available():
-        _safe_docker()
-        _scheduler.add_job(_safe_docker, 'interval', seconds=10, id='docker')
     _scheduler.start()

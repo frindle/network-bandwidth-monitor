@@ -65,24 +65,6 @@ def init_db():
                 hit_count    INTEGER NOT NULL DEFAULT 0,
                 PRIMARY KEY (hour_ts, service_ip, service_port, protocol)
             );
-            CREATE TABLE IF NOT EXISTS container_bw_raw (
-                ts             INTEGER NOT NULL,
-                container_id   TEXT    NOT NULL,
-                container_name TEXT    NOT NULL,
-                rx_rate        REAL    NOT NULL,
-                tx_rate        REAL    NOT NULL,
-                PRIMARY KEY (ts, container_id)
-            );
-            CREATE TABLE IF NOT EXISTS container_bw_hourly (
-                hour_ts        INTEGER NOT NULL,
-                container_id   TEXT    NOT NULL,
-                container_name TEXT    NOT NULL,
-                rx_bytes       INTEGER NOT NULL DEFAULT 0,
-                tx_bytes       INTEGER NOT NULL DEFAULT 0,
-                peak_rx_rate   REAL    NOT NULL DEFAULT 0,
-                peak_tx_rate   REAL    NOT NULL DEFAULT 0,
-                PRIMARY KEY (hour_ts, container_id)
-            );
             CREATE TABLE IF NOT EXISTS dns_cache (
                 ip          TEXT    PRIMARY KEY,
                 hostname    TEXT,
@@ -144,8 +126,6 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_conn_ht_ts      ON conn_hourly(hour_ts);
             CREATE INDEX IF NOT EXISTS idx_cf_tunnel_ts    ON cf_tunnel_hourly(hour_ts);
             CREATE INDEX IF NOT EXISTS idx_fw_devices_ip   ON fw_devices(ip);
-            CREATE INDEX IF NOT EXISTS idx_cbw_raw_ts      ON container_bw_raw(ts);
-            CREATE INDEX IF NOT EXISTS idx_cbw_hourly_ts   ON container_bw_hourly(hour_ts);
             CREATE INDEX IF NOT EXISTS idx_fw_conn_ts      ON fw_conn_hourly(hour_ts);
             CREATE INDEX IF NOT EXISTS idx_fw_conn_src     ON fw_conn_hourly(source_ip);
         """)
@@ -494,88 +474,6 @@ def query_cf_tunnel_hourly(since_hour):
         """, (since_hour,)).fetchall()
 
 
-# ── container bandwidth ────────────────────────────────────────────────────────
-
-def insert_container_bw_raw(samples):
-    with _db() as conn:
-        conn.executemany(
-            "INSERT OR REPLACE INTO container_bw_raw VALUES (?,?,?,?,?)", samples
-        )
-
-
-def query_container_bw_raw(container_name, since):
-    with _db() as conn:
-        return conn.execute(
-            "SELECT ts, rx_rate, tx_rate FROM container_bw_raw "
-            "WHERE container_name=? AND ts>=? ORDER BY ts",
-            (container_name, since)
-        ).fetchall()
-
-
-def query_container_bw_hourly(container_name, since):
-    with _db() as conn:
-        return conn.execute(
-            "SELECT hour_ts, SUM(rx_bytes) AS rx_bytes, SUM(tx_bytes) AS tx_bytes "
-            "FROM container_bw_hourly "
-            "WHERE container_name=? AND hour_ts>=? GROUP BY hour_ts ORDER BY hour_ts",
-            (container_name, since)
-        ).fetchall()
-
-
-def purge_container(container_id: str):
-    with _db() as conn:
-        conn.execute("DELETE FROM container_bw_raw WHERE container_id=?", (container_id,))
-        conn.execute("DELETE FROM container_bw_hourly WHERE container_id=?", (container_id,))
-
-
-def known_containers():
-    with _db() as conn:
-        rows = conn.execute("""
-            SELECT container_id, container_name, MAX(ts) AS last_ts
-            FROM container_bw_raw WHERE ts > ?
-            GROUP BY container_id
-            UNION
-            SELECT container_id, container_name, MAX(hour_ts) AS last_ts
-            FROM container_bw_hourly
-            GROUP BY container_id
-            ORDER BY last_ts DESC
-        """, (int(time.time()) - 7 * 86400,)).fetchall()
-        # Keep only the most recent container ID per name to avoid rebuild duplicates
-        seen = set()
-        result = []
-        for r in rows:
-            n = r['container_name']
-            if n not in seen:
-                seen.add(n)
-                result.append({'id': r['container_id'], 'name': n})
-        return result
-
-
-def purge_all_inactive_containers(active_ids: list):
-    """Delete history for every container ID not currently running and not the most recent per name."""
-    known = known_containers()
-    keep = set(active_ids) | {c['id'] for c in known}
-    with _db() as conn:
-        all_ids = {r[0] for r in conn.execute(
-            "SELECT DISTINCT container_id FROM container_bw_raw "
-            "UNION SELECT DISTINCT container_id FROM container_bw_hourly"
-        ).fetchall()}
-        for cid in all_ids - keep:
-            conn.execute("DELETE FROM container_bw_raw WHERE container_id=?", (cid,))
-            conn.execute("DELETE FROM container_bw_hourly WHERE container_id=?", (cid,))
-
-
-def query_totals_by_container(since_hour):
-    with _db() as conn:
-        return conn.execute("""
-            SELECT container_name,
-                   SUM(rx_bytes) AS rx_bytes, SUM(tx_bytes) AS tx_bytes,
-                   SUM(rx_bytes + tx_bytes) AS total_bytes
-            FROM container_bw_hourly WHERE hour_ts>=?
-            GROUP BY container_name ORDER BY total_bytes DESC
-        """, (since_hour,)).fetchall()
-
-
 # ── device labels ──────────────────────────────────────────────────────────────
 
 def get_all_labels() -> dict:
@@ -807,22 +705,6 @@ def aggregate_hourly():
         """, (watermark, cur_hour))
 
         conn.execute("""
-            INSERT INTO container_bw_hourly
-                (hour_ts,container_id,container_name,rx_bytes,tx_bytes,peak_rx_rate,peak_tx_rate)
-            SELECT (ts/3600)*3600,container_id,container_name,
-                   CAST(SUM(rx_rate*10) AS INTEGER), CAST(SUM(tx_rate*10) AS INTEGER),
-                   MAX(rx_rate), MAX(tx_rate)
-            FROM container_bw_raw WHERE ts>=? AND ts<?
-            GROUP BY (ts/3600)*3600,container_id
-            ON CONFLICT(hour_ts,container_id) DO UPDATE SET
-                container_name=excluded.container_name,
-                rx_bytes=container_bw_hourly.rx_bytes+excluded.rx_bytes,
-                tx_bytes=container_bw_hourly.tx_bytes+excluded.tx_bytes,
-                peak_rx_rate=MAX(container_bw_hourly.peak_rx_rate,excluded.peak_rx_rate),
-                peak_tx_rate=MAX(container_bw_hourly.peak_tx_rate,excluded.peak_tx_rate)
-        """, (watermark, cur_hour))
-
-        conn.execute("""
             INSERT INTO starlink_bw_hourly (hour_ts,iface,rx_bytes,tx_bytes,peak_rx_rate,peak_tx_rate)
             SELECT (ts/3600)*3600, iface,
                    CAST(SUM(rx_rate*30) AS INTEGER), CAST(SUM(tx_rate*30) AS INTEGER),
@@ -842,7 +724,6 @@ def aggregate_hourly():
         )
 
         conn.execute("DELETE FROM bw_raw WHERE ts<?", (cutoff,))
-        conn.execute("DELETE FROM container_bw_raw WHERE ts<?", (cutoff,))
         conn.execute("DELETE FROM starlink_bw_raw WHERE ts<?", (cutoff,))
 
 
@@ -855,7 +736,6 @@ def rebuild_hourly_from_raw():
     rebuilt = 0
     specs = [
         ('bw_raw', 'bw_hourly', 'iface', 10),
-        ('container_bw_raw', 'container_bw_hourly', 'container_id', 10),
         ('starlink_bw_raw', 'starlink_bw_hourly', 'iface', 30),
     ]
     cur_hour = (int(time.time()) // 3600) * 3600
@@ -872,25 +752,14 @@ def rebuild_hourly_from_raw():
             if start_hour >= cur_hour:
                 continue
             conn.execute(f"DELETE FROM {hourly} WHERE hour_ts>=? AND hour_ts<?", (start_hour, cur_hour))
-            if raw == 'container_bw_raw':
-                conn.execute("""
-                    INSERT INTO container_bw_hourly
-                        (hour_ts,container_id,container_name,rx_bytes,tx_bytes,peak_rx_rate,peak_tx_rate)
-                    SELECT (ts/3600)*3600,container_id,container_name,
-                           CAST(SUM(rx_rate*10) AS INTEGER), CAST(SUM(tx_rate*10) AS INTEGER),
-                           MAX(rx_rate), MAX(tx_rate)
-                    FROM container_bw_raw WHERE ts>=? AND ts<?
-                    GROUP BY (ts/3600)*3600,container_id
-                """, (start_hour, cur_hour))
-            else:
-                conn.execute(f"""
-                    INSERT INTO {hourly} (hour_ts,{key_col},rx_bytes,tx_bytes,peak_rx_rate,peak_tx_rate)
-                    SELECT (ts/3600)*3600,{key_col},
-                           CAST(SUM(rx_rate*{interval}) AS INTEGER), CAST(SUM(tx_rate*{interval}) AS INTEGER),
-                           MAX(rx_rate), MAX(tx_rate)
-                    FROM {raw} WHERE ts>=? AND ts<?
-                    GROUP BY (ts/3600)*3600,{key_col}
-                """, (start_hour, cur_hour))
+            conn.execute(f"""
+                INSERT INTO {hourly} (hour_ts,{key_col},rx_bytes,tx_bytes,peak_rx_rate,peak_tx_rate)
+                SELECT (ts/3600)*3600,{key_col},
+                       CAST(SUM(rx_rate*{interval}) AS INTEGER), CAST(SUM(tx_rate*{interval}) AS INTEGER),
+                       MAX(rx_rate), MAX(tx_rate)
+                FROM {raw} WHERE ts>=? AND ts<?
+                GROUP BY (ts/3600)*3600,{key_col}
+            """, (start_hour, cur_hour))
             rebuilt += conn.execute(
                 f"SELECT COUNT(*) AS c FROM {hourly} WHERE hour_ts>=? AND hour_ts<?",
                 (start_hour, cur_hour),

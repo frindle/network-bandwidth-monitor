@@ -1,9 +1,19 @@
-import http.client
 import json
 import os
+import subprocess
 
-# Settings are read from DB at call time so UI changes take effect immediately.
-# Env vars are fallbacks for headless/automated setups.
+# SSH into Firewalla and curl the local API (app-local.js on 127.0.0.1:8834).
+# Each call is a fresh SSH connection — no persistent tunnel to maintain.
+
+_SSH_KEY  = os.environ.get('FIREWALLA_SSH_KEY',
+                           os.environ.get('STARLINK_SSH_KEY', '/root/.ssh/id_firewalla'))
+_SSH_OPTS = [
+    '-i', _SSH_KEY,
+    '-o', 'StrictHostKeyChecking=no',
+    '-o', 'UserKnownHostsFile=/dev/null',
+    '-o', 'ConnectTimeout=5',
+    '-o', 'BatchMode=yes',
+]
 
 
 def _setting(key: str) -> str:
@@ -14,45 +24,43 @@ def _setting(key: str) -> str:
         return os.environ.get(key.upper(), '')
 
 
-def _ip()    -> str: return _setting('firewalla_ip')
-def _port()  -> int: return int(_setting('firewalla_port') or 8834)
-def _token() -> str: return _setting('firewalla_token')
+def _ip() -> str:
+    return _setting('firewalla_ssh_ip') or _setting('firewalla_ip')
 
 
 def available() -> bool:
-    return bool(_ip())
+    return bool(_ip()) and os.path.exists(_SSH_KEY)
 
 
-def _get(path: str):
-    conn = http.client.HTTPConnection(_ip(), _port(), timeout=8)
-    headers = {'Accept': 'application/json'}
-    tok = _token()
-    if tok:
-        headers['Authorization'] = f'Token {tok}'
-    conn.request('GET', path, headers=headers)
-    resp = conn.getresponse()
-    body = resp.read()
-    conn.close()
-    if resp.status != 200:
-        raise RuntimeError(f'HTTP {resp.status}: {body[:200]}')
-    return json.loads(body)
+def _ssh_curl(path: str, timeout: int = 10) -> dict | list:
+    ip = _ip()
+    if not ip:
+        raise RuntimeError('Firewalla IP not configured')
+    result = subprocess.run(
+        ['ssh'] + _SSH_OPTS + [f'pi@{ip}', f'curl -s http://127.0.0.1:8834{path}'],
+        capture_output=True, text=True, timeout=timeout
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f'SSH exit {result.returncode}: {result.stderr.strip()[:200]}')
+    return json.loads(result.stdout)
 
 
 def test_connection() -> tuple[bool, str]:
     if not _ip():
         return False, 'Firewalla IP not configured'
+    if not os.path.exists(_SSH_KEY):
+        return False, f'SSH key not found: {_SSH_KEY}'
     try:
-        data = _get('/v1/host/all')
+        data = _ssh_curl('/v1/host/all')
         hosts = data.get('hosts', []) if isinstance(data, dict) else data
-        return True, f'Connected — {len(hosts)} devices visible'
+        return True, f'Connected via SSH — {len(hosts)} devices visible'
     except Exception as e:
         return False, str(e)
 
 
 def get_devices() -> list:
-    """Returns list of host dicts: {ip, mac, name, macVendor, lastActive, ...}"""
     try:
-        data = _get('/v1/host/all')
+        data = _ssh_curl('/v1/host/all')
         if isinstance(data, dict):
             return data.get('hosts', [])
         return data or []
@@ -61,9 +69,8 @@ def get_devices() -> list:
 
 
 def get_flows(begin: int, end: int, count: int = 500) -> list:
-    """Returns list of flow dicts. begin/end are Unix timestamps."""
     try:
-        data = _get(f'/v1/flow?begin={begin}&end={end}&count={count}')
+        data = _ssh_curl(f'/v1/flow?begin={begin}&end={end}&count={count}', timeout=15)
         if isinstance(data, dict):
             return data.get('flows', data.get('result', []))
         return data or []
@@ -73,6 +80,6 @@ def get_flows(begin: int, end: int, count: int = 500) -> list:
 
 def get_stats(begin: int, end: int) -> dict:
     try:
-        return _get(f'/v1/stats?begin={begin}&end={end}') or {}
+        return _ssh_curl(f'/v1/stats?begin={begin}&end={end}') or {}
     except Exception:
         return {}
