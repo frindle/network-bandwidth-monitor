@@ -14,6 +14,7 @@ services:
     networks:
       br0:
         ipv4_address: ${CONTAINER_IP}
+        mac_address: "02:42:0a:00:09:2f"
 
 networks:
   br0:
