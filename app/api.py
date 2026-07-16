@@ -14,7 +14,7 @@ import app.firewalla as firewalla
 import app.resolver as resolver
 import app.starlink_collector as starlink_collector
 
-VERSION = '0.12.0'
+VERSION = '0.13.0'
 
 app = Flask(__name__)
 
@@ -558,6 +558,16 @@ def fw_devices_list():
             'last_active': d['last_active'],
         })
     return jsonify(result)
+
+
+@app.route('/api/fw_poll_health')
+def fw_poll_health():
+    """SSH-per-poll reliability: success rate + latency over the last 24h/7d."""
+    range_str = request.args.get('range', '24h')
+    since = int(time.time()) - _RANGES.get(range_str, 86400)
+    summary = db.query_fw_poll_summary(since)
+    summary['recent_failures'] = db.query_fw_poll_recent_failures(since, limit=10)
+    return jsonify(summary)
 
 
 @app.route('/api/fw_debug')

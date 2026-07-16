@@ -1,6 +1,7 @@
 import json
 import os
 import subprocess
+import time
 
 # SSH into Firewalla and curl the local API (app-local.js on 127.0.0.1:8834).
 # Each call is a fresh SSH connection — no persistent tunnel to maintain.
@@ -32,17 +33,57 @@ def available() -> bool:
     return bool(_ip()) and os.path.exists(_SSH_KEY)
 
 
+def _log_poll(success: bool, latency_ms: int, error_type: str = '', error: str = ''):
+    # Never let poll-health logging break the actual poll.
+    try:
+        import app.database as db
+        db.insert_fw_poll(int(time.time()), success, latency_ms, error_type, error[:300])
+    except Exception:
+        pass
+
+
+def _classify_ssh_error(returncode: int, stderr: str) -> str:
+    s = stderr.lower()
+    if 'connection refused' in s:
+        return 'connection_refused'
+    if 'timed out' in s or 'timeout' in s:
+        return 'timeout'
+    if 'permission denied' in s or 'authentication' in s:
+        return 'auth_failed'
+    if 'no route to host' in s or 'network is unreachable' in s:
+        return 'unreachable'
+    if 'could not resolve' in s or 'name or service not known' in s:
+        return 'dns_error'
+    return f'ssh_error_{returncode}'
+
+
 def _ssh_curl(path: str, timeout: int = 10) -> dict | list:
     ip = _ip()
     if not ip:
         raise RuntimeError('Firewalla IP not configured')
-    result = subprocess.run(
-        ['ssh'] + _SSH_OPTS + [f'pi@{ip}', f'curl -s http://127.0.0.1:8834{path}'],
-        capture_output=True, text=True, timeout=timeout
-    )
+    start = time.monotonic()
+    try:
+        result = subprocess.run(
+            ['ssh'] + _SSH_OPTS + [f'pi@{ip}', f'curl -s http://127.0.0.1:8834{path}'],
+            capture_output=True, text=True, timeout=timeout
+        )
+    except subprocess.TimeoutExpired:
+        latency_ms = int((time.monotonic() - start) * 1000)
+        _log_poll(False, latency_ms, 'timeout', f'SSH timed out after {timeout}s')
+        raise RuntimeError(f'SSH timeout after {timeout}s')
+    latency_ms = int((time.monotonic() - start) * 1000)
     if result.returncode != 0:
-        raise RuntimeError(f'SSH exit {result.returncode}: {result.stderr.strip()[:200]}')
-    return json.loads(result.stdout)
+        stderr    = result.stderr.strip()[:300]
+        err_type  = _classify_ssh_error(result.returncode, stderr)
+        _log_poll(False, latency_ms, err_type, stderr)
+        raise RuntimeError(f'SSH exit {result.returncode}: {stderr[:200]}')
+    try:
+        data = json.loads(result.stdout)
+    except json.JSONDecodeError as e:
+        _log_poll(False, latency_ms, 'bad_response', f'JSON decode failed: {e}')
+        raise RuntimeError(f'Bad response from Firewalla: {e}')
+    _log_poll(True, latency_ms)
+    return data
 
 
 def test_connection() -> tuple[bool, str]:

@@ -2,7 +2,7 @@
 
 Docker app for tracking network bandwidth usage and connection destinations over time on all Unraid interfaces.
 
-**Current version:** 0.11.0
+**Current version:** 0.13.0
 
 ## What it does
 
@@ -70,6 +70,7 @@ If you have a Firewalla Gold Plus device, you can enable:
 - **WAN bandwidth** — Cox (eth0) and Starlink (eth3) counters via SSH
 - **Device names** — friendly names from Firewalla's device database
 - **Device groups** — Family, Work, etc. shown as badges
+- **SSH poll health** — Settings shows success rate and latency for the SSH-per-poll connection over the last 24h/7d, to diagnose flaky connections
 
 To enable, open the dashboard → Settings → enter your Firewalla IP and API token.
 

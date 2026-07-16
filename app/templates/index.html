@@ -152,6 +152,15 @@
       <button class="btn btn-secondary" onclick="syncFw()" id="fw-sync-btn">Sync Devices</button>
       <span class="test-result" id="fw-test-result" style="display:none"></span>
     </div>
+    <div class="field">
+      <label>SSH Poll Health</label>
+      <div class="bg" id="fw-health-range" style="display:inline-flex;margin-bottom:6px">
+        <button class="active" data-hrange="24h" onclick="loadFwHealth('24h')">24h</button>
+        <button data-hrange="7d" onclick="loadFwHealth('7d')">7d</button>
+      </div>
+      <div class="hint" id="fw-health-summary">Loading…</div>
+      <div class="hint" id="fw-health-errors"></div>
+    </div>
 
     <div class="section-divider">Network</div>
     <div class="field">
@@ -770,6 +779,22 @@ async function openSettings(){
   document.getElementById('fw-test-result').style.display='none';
   document.getElementById('save-result').style.display='none';
   document.getElementById('settings-modal').classList.add('open');
+  loadFwHealth('24h');
+}
+
+async function loadFwHealth(range){
+  document.querySelectorAll('#fw-health-range button').forEach(b=>b.classList.toggle('active',b.dataset.hrange===range));
+  const el=document.getElementById('fw-health-summary');
+  el.textContent='Loading…';
+  document.getElementById('fw-health-errors').textContent='';
+  const h=await fetch(`${API}/api/fw_poll_health?range=${range}`).then(r=>r.json());
+  if(!h.total){ el.textContent='No poll data yet for this window.'; return; }
+  el.textContent=`${h.successes}/${h.total} polls succeeded (${h.success_rate}%)`+
+    (h.avg_latency_ms!=null?` — avg ${h.avg_latency_ms} ms, max ${h.max_latency_ms} ms`:'');
+  const errEl=document.getElementById('fw-health-errors');
+  if(h.errors&&h.errors.length){
+    errEl.textContent='Failures: '+h.errors.map(e=>`${e.error_type} ×${e.count}`).join(', ');
+  }
 }
 
 function closeSettings(){

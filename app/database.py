@@ -128,6 +128,7 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_fw_devices_ip   ON fw_devices(ip);
             CREATE INDEX IF NOT EXISTS idx_fw_conn_ts      ON fw_conn_hourly(hour_ts);
             CREATE INDEX IF NOT EXISTS idx_fw_conn_src     ON fw_conn_hourly(source_ip);
+            CREATE INDEX IF NOT EXISTS idx_fw_poll_ts      ON fw_poll_log(ts);
         """)
     _migrate()
     # idx_conn_source requires source_ip which may not exist until after _migrate runs
@@ -230,6 +231,19 @@ def _migrate():
                 );
                 CREATE INDEX IF NOT EXISTS idx_fw_conn_ts  ON fw_conn_hourly(hour_ts);
                 CREATE INDEX IF NOT EXISTS idx_fw_conn_src ON fw_conn_hourly(source_ip);
+            """)
+
+        # v0.12 → v0.13: add fw_poll_log table (SSH-per-poll reliability tracking)
+        if 'fw_poll_log' not in tables:
+            conn.executescript("""
+                CREATE TABLE IF NOT EXISTS fw_poll_log (
+                    ts         INTEGER NOT NULL,
+                    success    INTEGER NOT NULL,
+                    latency_ms INTEGER NOT NULL DEFAULT 0,
+                    error_type TEXT    NOT NULL DEFAULT '',
+                    error      TEXT    NOT NULL DEFAULT ''
+                );
+                CREATE INDEX IF NOT EXISTS idx_fw_poll_ts ON fw_poll_log(ts);
             """)
 
         cols = {r[1] for r in conn.execute("PRAGMA table_info(conn_hourly)").fetchall()}
@@ -647,6 +661,54 @@ def get_all_fw_devices() -> list:
         return [dict(r) for r in rows]
 
 
+# ── Firewalla poll health (SSH-per-poll reliability) ──────────────────────────
+# Raw log only — kept 7 days (pruned in aggregate_hourly), same window as
+# bw_raw/starlink_bw_raw. No permanent hourly aggregate: nothing here needs
+# history past 7d, so there's nothing to roll up.
+
+def insert_fw_poll(ts: int, success: bool, latency_ms: int, error_type: str = '', error: str = ''):
+    with _db() as conn:
+        conn.execute(
+            "INSERT INTO fw_poll_log (ts, success, latency_ms, error_type, error) VALUES (?,?,?,?,?)",
+            (ts, 1 if success else 0, latency_ms, error_type, error)
+        )
+
+
+def query_fw_poll_summary(since: int) -> dict:
+    with _db() as conn:
+        row = conn.execute("""
+            SELECT COUNT(*) AS total,
+                   SUM(success) AS successes,
+                   AVG(CASE WHEN success=1 THEN latency_ms END) AS avg_latency_ms,
+                   MAX(CASE WHEN success=1 THEN latency_ms END) AS max_latency_ms
+            FROM fw_poll_log WHERE ts>=?
+        """, (since,)).fetchone()
+        errors = conn.execute("""
+            SELECT error_type, COUNT(*) AS c FROM fw_poll_log
+            WHERE ts>=? AND success=0 GROUP BY error_type ORDER BY c DESC
+        """, (since,)).fetchall()
+        total     = row['total'] or 0
+        successes = row['successes'] or 0
+        return {
+            'total':          total,
+            'successes':      successes,
+            'failures':       total - successes,
+            'success_rate':   round(successes / total * 100, 1) if total else None,
+            'avg_latency_ms': round(row['avg_latency_ms']) if row['avg_latency_ms'] else None,
+            'max_latency_ms': row['max_latency_ms'],
+            'errors': [{'error_type': e['error_type'] or 'unknown', 'count': e['c']} for e in errors],
+        }
+
+
+def query_fw_poll_recent_failures(since: int, limit: int = 10) -> list:
+    with _db() as conn:
+        rows = conn.execute("""
+            SELECT ts, latency_ms, error_type, error FROM fw_poll_log
+            WHERE ts>=? AND success=0 ORDER BY ts DESC LIMIT ?
+        """, (since, limit)).fetchall()
+        return [dict(r) for r in rows]
+
+
 # ── DNS cache ──────────────────────────────────────────────────────────────────
 
 def get_dns(ip):
@@ -725,6 +787,7 @@ def aggregate_hourly():
 
         conn.execute("DELETE FROM bw_raw WHERE ts<?", (cutoff,))
         conn.execute("DELETE FROM starlink_bw_raw WHERE ts<?", (cutoff,))
+        conn.execute("DELETE FROM fw_poll_log WHERE ts<?", (cutoff,))
 
 
 def rebuild_hourly_from_raw():
