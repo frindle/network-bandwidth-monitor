@@ -124,3 +124,75 @@ def get_stats(begin: int, end: int) -> dict:
         return _ssh_curl(f'/v1/stats?begin={begin}&end={end}') or {}
     except Exception:
         return {}
+
+
+# ── quarantine / DAP policy ──────────────────────────────────────────────────
+# Firewalla's local API has no endpoint for this — it lives only in the
+# box's own redis. Confirmed by hand (2026-07-18): a device's "quarantine"
+# boolean is a red herring (stays false); the thing that actually isolates a
+# new device is policy:mac:<MAC>.dap.localAclState == "learning". Approving a
+# device in the Firewalla app doesn't touch that dap blob at all — it just
+# reassigns the device's "tags" field to a real group ID. So automation here
+# means writing "tags", not trying to reconstruct the dap JSON.
+
+def _ssh_run(remote_cmd: str, timeout: int = 15) -> str:
+    ip = _ip()
+    if not ip:
+        raise RuntimeError('Firewalla IP not configured')
+    result = subprocess.run(
+        ['ssh'] + _SSH_OPTS + [f'pi@{ip}', remote_cmd],
+        capture_output=True, text=True, timeout=timeout
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f'SSH exit {result.returncode}: {result.stderr.strip()[:300]}')
+    return result.stdout
+
+
+_QUARANTINE_SCAN = (
+    "for k in $(redis-cli --scan --pattern 'policy:mac:*'); do "
+    "mac=${k#policy:mac:}; "
+    "tags=$(redis-cli hget \"$k\" tags); "
+    "acl=$(redis-cli hget \"$k\" dap | grep -o '\"localAclState\":\"[a-z]*\"' | head -1 | cut -d'\"' -f4); "
+    "echo \"${mac}|${tags}|${acl}\"; "
+    "done"
+)
+
+
+def list_quarantined_devices() -> list[dict]:
+    """Devices still in Firewalla's default DAP 'learning' (isolated) state."""
+    try:
+        out = _ssh_run(_QUARANTINE_SCAN)
+    except Exception:
+        return []
+    result = []
+    for line in out.splitlines():
+        parts = line.split('|', 2)
+        if len(parts) != 3:
+            continue
+        mac, tags_raw, acl = parts
+        if acl != 'learning':
+            continue
+        try:
+            tags = json.loads(tags_raw) if tags_raw else []
+        except json.JSONDecodeError:
+            tags = []
+        result.append({'mac': mac, 'tags': tags, 'acl_state': acl})
+    return result
+
+
+def approve_device(mac: str, tag_id: str) -> tuple[bool, str]:
+    """Move a device out of the default 'new device' group by reassigning
+    its tag — this is what the Firewalla app's own approve action does,
+    confirmed by diffing policy:mac:<MAC> before/after in-app."""
+    mac = mac.strip().upper()
+    if not mac:
+        return False, 'MAC required'
+    tag_id = (tag_id or '').strip()
+    if not tag_id:
+        return False, 'No trusted tag ID configured (Settings)'
+    tags_json = json.dumps([tag_id])
+    try:
+        _ssh_run(f"redis-cli hset policy:mac:{mac} tags '{tags_json}'")
+        return True, f'{mac} moved to tag {tag_id}'
+    except Exception as e:
+        return False, str(e)

@@ -523,7 +523,7 @@ def get_labels():
 # ── settings ──────────────────────────────────────────────────────────────────
 
 _SETTING_KEYS = ['firewalla_ip', 'firewalla_ssh_ip', 'local_subnet', 'cf_tunnel_ip',
-                 'cf_api_token', 'cf_zone_id']
+                 'cf_api_token', 'cf_zone_id', 'firewalla_trusted_tag_id']
 
 @app.route('/api/settings', methods=['GET'])
 def get_settings():
@@ -561,6 +561,36 @@ def fw_sync():
     fw_collector.poll_once()
     count = len(db.get_all_fw_devices())
     return jsonify({'ok': True, 'message': f'Synced — {count} devices in database'})
+
+
+@app.route('/api/firewalla/quarantined')
+def firewalla_quarantined():
+    import app.firewalla as fw
+    if not fw.available():
+        return jsonify([])
+    devices  = fw.list_quarantined_devices()
+    fw_by_mac = {d['mac'].upper(): d for d in db.get_all_fw_devices() if d['mac']}
+    result = []
+    for d in devices:
+        known = fw_by_mac.get(d['mac'].upper())
+        result.append({
+            'mac':     d['mac'],
+            'tags':    d['tags'],
+            'ip':      known['ip']   if known else None,
+            'name':    known['name'] if known else None,
+            'vendor':  known['mac_vendor'] if known else None,
+        })
+    return jsonify(result)
+
+
+@app.route('/api/firewalla/quarantined/approve', methods=['POST'])
+def firewalla_approve():
+    import app.firewalla as fw
+    body   = request.get_json(force=True) or {}
+    mac    = body.get('mac', '')
+    tag_id = db.get_setting('firewalla_trusted_tag_id') or ''
+    ok, msg = fw.approve_device(mac, tag_id)
+    return jsonify({'ok': ok, 'message': msg})
 
 @app.route('/api/fw_devices')
 def fw_devices_list():

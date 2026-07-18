@@ -153,6 +153,11 @@
       <span class="test-result" id="fw-test-result" style="display:none"></span>
     </div>
     <div class="field">
+      <label>Trusted Tag ID</label>
+      <input type="text" id="fw-trusted-tag" placeholder="5" autocomplete="off">
+      <div class="hint">Firewalla group/tag ID to move a device into when you click "Approve" on a quarantined device. Find it by approving one device manually in the Firewalla app, then checking <code>redis-cli hgetall policy:mac:&lt;MAC&gt;</code> on the box for the new "tags" value.</div>
+    </div>
+    <div class="field">
       <label>SSH Poll Health</label>
       <div class="bg" id="fw-health-range" style="display:inline-flex;margin-bottom:6px">
         <button class="active" data-hrange="24h" onclick="loadFwHealth('24h')">24h</button>
@@ -257,6 +262,21 @@
     </table>
     <div class="empty" id="conn-empty" style="display:none">No connection data yet.</div>
     <div id="conn-expand" style="display:none;text-align:center;padding:8px 0;font-size:12px;color:var(--accent)"></div>
+  </div>
+
+  <!-- quarantined devices -->
+  <div class="card" id="quar-card" style="display:none">
+    <div class="ch"><div class="meta"><span class="ct">Quarantined on Firewalla</span><span class="cnt" id="quar-cnt">0</span></div></div>
+    <table>
+      <thead><tr>
+        <th>Device</th>
+        <th>MAC</th>
+        <th>Current tag</th>
+        <th></th>
+      </tr></thead>
+      <tbody id="quar-body"></tbody>
+    </table>
+    <div class="hint" style="padding:8px 12px">Approves by reassigning the device's Firewalla tag to the "Trusted tag ID" set in Settings — same effect as approving it in the Firewalla app.</div>
   </div>
 
   <!-- devices table -->
@@ -608,6 +628,36 @@ async function refreshDevices(){
     renderDevices();
     _updateChartLabel();
   }catch(e){console.error('dev',e)}
+  refreshQuarantined();
+}
+
+async function refreshQuarantined(){
+  let list=[];
+  try{ list=await fetch(`${API}/api/firewalla/quarantined`).then(r=>r.json()); }
+  catch(e){console.error('quar',e); return}
+  const card=document.getElementById('quar-card');
+  if(!list.length){ card.style.display='none'; return }
+  card.style.display='';
+  document.getElementById('quar-cnt').textContent=list.length;
+  document.getElementById('quar-body').innerHTML=list.map(d=>`
+    <tr>
+      <td>${d.name||d.vendor||d.ip||'Unknown device'}${d.ip?` <span style="color:var(--muted)">${d.ip}</span>`:''}</td>
+      <td style="font-variant-numeric:tabular-nums;color:var(--muted)">${d.mac}</td>
+      <td>${(d.tags||[]).join(', ')||'—'}</td>
+      <td><button class="btn btn-secondary" onclick="approveQuarantined('${d.mac}',this)">Approve</button></td>
+    </tr>`).join('');
+}
+
+async function approveQuarantined(mac,btn){
+  btn.disabled=true; btn.textContent='…';
+  try{
+    const res=await fetch(`${API}/api/firewalla/quarantined/approve`,{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({mac})
+    }).then(r=>r.json());
+    if(!res.ok) alert('Failed: '+res.message);
+  }catch(e){ alert('Failed: '+e); }
+  refreshQuarantined();
 }
 
 function renderDevices(){
@@ -829,6 +879,7 @@ document.getElementById('range-btns').addEventListener('click',e=>{
 async function openSettings(){
   const data=await fetch(`${API}/api/settings`).then(r=>r.json());
   document.getElementById('fw-ssh-ip').value     = data.firewalla_ssh_ip||'';
+  document.getElementById('fw-trusted-tag').value= data.firewalla_trusted_tag_id||'';
   document.getElementById('s-subnet').value      = data.local_subnet||'';
   document.getElementById('s-cf-container').value= data.cf_tunnel_ip||'';
   document.getElementById('cf-token').value      = data.cf_api_token||'';
@@ -862,6 +913,7 @@ function closeSettings(){
 async function saveSettings(){
   const body={
     firewalla_ssh_ip:    document.getElementById('fw-ssh-ip').value.trim(),
+    firewalla_trusted_tag_id: document.getElementById('fw-trusted-tag').value.trim(),
     local_subnet:        document.getElementById('s-subnet').value.trim(),
     cf_tunnel_ip: document.getElementById('s-cf-container').value.trim(),
     cf_api_token: document.getElementById('cf-token').value.trim(),
