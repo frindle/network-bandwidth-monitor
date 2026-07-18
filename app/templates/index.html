@@ -174,6 +174,22 @@
       <div class="hint">IP address of the cloudflared container</div>
     </div>
 
+    <div class="section-divider">Cloudflare Edge Analytics</div>
+    <div class="field">
+      <label>API Token</label>
+      <input type="password" id="cf-token" placeholder="Cloudflare API token" autocomplete="off">
+      <div class="hint">Token with <b>Zone → Analytics → Read</b>. Polls per-hostname request counts &amp; edge bytes hourly via the GraphQL API.</div>
+    </div>
+    <div class="field">
+      <label>Zone ID(s)</label>
+      <input type="text" id="cf-zone" placeholder="zone id, or several comma-separated" autocomplete="off">
+      <div class="hint">Zone (domain) ID from the Cloudflare dashboard Overview page. Comma-separate multiple zones.</div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="testCf()" id="cf-test-btn">Test Connection</button>
+      <span class="test-result" id="cf-test-result" style="display:none"></span>
+    </div>
+
     <div class="modal-actions" style="margin-top:22px;border-top:1px solid var(--border);padding-top:16px">
       <button class="btn btn-primary" onclick="saveSettings()">Save</button>
       <button class="btn btn-secondary" onclick="closeSettings()">Cancel</button>
@@ -281,6 +297,25 @@
       <tbody id="tun-body"></tbody>
     </table>
     <div class="empty" id="tun-empty" style="display:none">No tunnel traffic detected yet. CF Tunnel IP must be configured in Settings.</div>
+  </div>
+
+  <!-- CF edge analytics (Cloudflare GraphQL) -->
+  <div class="card" id="cf-edge-card" style="display:none">
+    <div class="ch">
+      <div class="meta">
+        <span class="ct">Edge analytics (Cloudflare) — per public hostname</span>
+        <span class="cnt" id="edge-cnt">0</span>
+      </div>
+    </div>
+    <table>
+      <thead><tr>
+        <th>Hostname</th>
+        <th style="text-align:right">Requests</th>
+        <th style="text-align:right">Edge bytes</th>
+      </tr></thead>
+      <tbody id="edge-body"></tbody>
+    </table>
+    <div class="empty" id="edge-empty" style="display:none">No edge data. Add a Cloudflare API token + Zone ID in Settings; data appears after the first hourly poll.</div>
   </div>
 </main>
 
@@ -671,9 +706,29 @@ function renderTunnel(){
   }).join('');
 }
 
+async function refreshEdge(){
+  try{
+    const rows=await fetch(`${API}/api/cf_edge?range=${range}`).then(r=>r.json());
+    const body=document.getElementById('edge-body');
+    const empty=document.getElementById('edge-empty');
+    document.getElementById('edge-cnt').textContent=rows.length;
+    if(!rows.length){body.innerHTML='';empty.style.display='block';return}
+    empty.style.display='none';
+    const max=Math.max(1,...rows.map(r=>r.edge_bytes||0));
+    body.innerHTML=rows.map(r=>{
+      const pct=Math.round((r.edge_bytes||0)/max*100);
+      return `<tr>
+        <td><div class="hcell"><span class="hn">${r.hostname} <span class="badge b-cf">edge</span></span></div></td>
+        <td style="color:var(--muted);text-align:right">${(r.requests||0).toLocaleString()}</td>
+        <td style="text-align:right"><div class="bar-cell"><div class="bar-bg"><div class="bar-fill" style="width:${pct}%;background:var(--tunnel)"></div></div><span class="bv">${fmtBytes(r.edge_bytes)}</span></div></td>
+      </tr>`;
+    }).join('');
+  }catch(e){console.error('edge',e)}
+}
+
 /* ── view switching ──────────────────────────────────────────────────────────── */
-const PANEL_IDS=['conn-card','dev-card','tun-card'];
-const VIEW_PANELS={interfaces:'conn-card',devices:['conn-card','dev-card'],cf_tunnel:'tun-card'};
+const PANEL_IDS=['conn-card','dev-card','tun-card','cf-edge-card'];
+const VIEW_PANELS={interfaces:'conn-card',devices:['conn-card','dev-card'],cf_tunnel:['tun-card','cf-edge-card']};
 
 function setView(v){
   view=v; sub='all'; _selectedDevice=null;
@@ -740,7 +795,7 @@ async function refreshAll(){
   const tasks=[refreshHeader(),refreshChart(),refreshTotals()];
   if(view==='interfaces')  tasks.push(refreshConnections());
   if(view==='devices')     tasks.push(refreshDevices(),refreshConnections());
-  if(view==='cf_tunnel')   tasks.push(refreshTunnel());
+  if(view==='cf_tunnel')   tasks.push(refreshTunnel(),refreshEdge());
   await Promise.all(tasks);
 }
 
@@ -776,6 +831,9 @@ async function openSettings(){
   document.getElementById('fw-ssh-ip').value     = data.firewalla_ssh_ip||'';
   document.getElementById('s-subnet').value      = data.local_subnet||'';
   document.getElementById('s-cf-container').value= data.cf_tunnel_ip||'';
+  document.getElementById('cf-token').value      = data.cf_api_token||'';
+  document.getElementById('cf-zone').value       = data.cf_zone_id||'';
+  document.getElementById('cf-test-result').style.display='none';
   document.getElementById('fw-test-result').style.display='none';
   document.getElementById('save-result').style.display='none';
   document.getElementById('settings-modal').classList.add('open');
@@ -806,6 +864,8 @@ async function saveSettings(){
     firewalla_ssh_ip:    document.getElementById('fw-ssh-ip').value.trim(),
     local_subnet:        document.getElementById('s-subnet').value.trim(),
     cf_tunnel_ip: document.getElementById('s-cf-container').value.trim(),
+    cf_api_token: document.getElementById('cf-token').value.trim(),
+    cf_zone_id:   document.getElementById('cf-zone').value.trim(),
   };
   const res=await fetch(`${API}/api/settings`,{method:'POST',
     headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
@@ -813,6 +873,25 @@ async function saveSettings(){
   el.style.display='';
   if(res.ok){ el.className='test-result test-ok'; el.textContent='Saved'; setTimeout(()=>{ el.style.display='none'; closeSettings(); },1200); }
   else       { el.className='test-result test-fail'; el.textContent='Save failed'; }
+}
+
+async function testCf(){
+  const btn=document.getElementById('cf-test-btn');
+  const el =document.getElementById('cf-test-result');
+  btn.disabled=true; btn.textContent='Testing…';
+  el.style.display='none';
+  // Save token+zone first so the server test uses current values.
+  await fetch(`${API}/api/settings`,{method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({
+      cf_api_token:document.getElementById('cf-token').value.trim(),
+      cf_zone_id:document.getElementById('cf-zone').value.trim(),
+    })});
+  const res=await fetch(`${API}/api/settings/cf_test`).then(r=>r.json());
+  btn.disabled=false; btn.textContent='Test Connection';
+  el.style.display='';
+  el.className='test-result '+(res.ok?'test-ok':'test-fail');
+  el.textContent=res.message;
 }
 
 async function testFw(){

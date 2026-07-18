@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.14.0] - 2026-07-18
+
+### Added
+- **Cloudflare edge analytics.** New hourly poller (`app/cloudflare_api.py`) queries the Cloudflare GraphQL Analytics API (`httpRequestsAdaptiveGroups`, zone-scoped) for per-public-hostname HTTP **request counts** and **edge bytes** — the edge-side view that local conntrack cannot see (public hostname mapping, request counts, cached/edge-served traffic). Stored in the new `cf_edge_hourly` table (authoritative per-hour totals, written with REPLACE), surfaced at `GET /api/cf_edge`, and shown as a second table in the **CF Tunnel** dashboard view.
+- Settings gained a **Cloudflare Edge Analytics** section (API token + Zone ID + Test Connection). Auth is an API token with *Zone -> Analytics -> Read*; no account ID required. Works on the Free plan. Polls once per hour per zone — well within Cloudflare's ~300 queries / 5 min limit.
+- Note: `cloudflared --metrics` was evaluated as an alternative local source and rejected — it exposes request counts and response codes but **no byte-transfer metrics**, and only aggregate (not per-hostname) counters.
+
+
 ## [0.11.0] - 2026-07-06
 
 ### Fixed

@@ -6,6 +6,7 @@ import time
 from flask import Flask, jsonify, render_template, request
 
 import app.cloudflare as cloudflare
+import app.cloudflare_api as cloudflare_api
 import app.collector as collector
 import app.database as db
 import app.fw_collector as fw_collector
@@ -14,7 +15,7 @@ import app.firewalla as firewalla
 import app.resolver as resolver
 import app.starlink_collector as starlink_collector
 
-VERSION = '0.13.0'
+VERSION = '0.14.0'
 
 app = Flask(__name__)
 
@@ -488,6 +489,19 @@ def cf_tunnel_bandwidth():
     return jsonify(data)
 
 
+@app.route('/api/cf_edge')
+def cf_edge():
+    """Cloudflare edge analytics per public hostname (GraphQL). Empty list
+    until an API token + zone ID are configured in Settings."""
+    range_str = request.args.get('range', '24h')
+    rows = db.query_cf_edge(_since_hour(range_str))
+    return jsonify([{
+        'hostname':   r['hostname'],
+        'requests':   r['requests'] or 0,
+        'edge_bytes': r['edge_bytes'] or 0,
+    } for r in rows])
+
+
 # ── device labels ──────────────────────────────────────────────────────────────
 
 @app.route('/api/label', methods=['POST'])
@@ -508,7 +522,8 @@ def get_labels():
 
 # ── settings ──────────────────────────────────────────────────────────────────
 
-_SETTING_KEYS = ['firewalla_ip', 'firewalla_ssh_ip', 'local_subnet', 'cf_tunnel_ip']
+_SETTING_KEYS = ['firewalla_ip', 'firewalla_ssh_ip', 'local_subnet', 'cf_tunnel_ip',
+                 'cf_api_token', 'cf_zone_id']
 
 @app.route('/api/settings', methods=['GET'])
 def get_settings():
@@ -528,6 +543,11 @@ def save_settings():
 def fw_test():
     import app.firewalla as fw
     ok, msg = fw.test_connection()
+    return jsonify({'ok': ok, 'message': msg})
+
+@app.route('/api/settings/cf_test')
+def cf_test():
+    ok, msg = cloudflare_api.test_connection()
     return jsonify({'ok': ok, 'message': msg})
 
 @app.route('/api/settings/fw_sync', methods=['POST'])

@@ -8,6 +8,7 @@ import time
 from apscheduler.schedulers.background import BackgroundScheduler
 
 import app.database as db
+import app.cloudflare_api as cloudflare_api
 
 NET_BASE      = os.environ.get('NET_BASE', '/host/net')
 NET_DEV       = f'{NET_BASE}/dev'
@@ -282,6 +283,15 @@ def _safe_aggregate():
         traceback.print_exc()
 
 
+def _safe_cf_edge_poll():
+    # Cloudflare GraphQL analytics — only runs when a token + zone are configured.
+    try:
+        cloudflare_api.poll_once()
+    except Exception:
+        import traceback
+        traceback.print_exc()
+
+
 def stop():
     global _scheduler
     if _scheduler:
@@ -298,4 +308,5 @@ def start():
     _scheduler.add_job(_safe_collect_bandwidth,   'interval', seconds=10, id='bw')
     _scheduler.add_job(_safe_collect_connections, 'interval', seconds=60, id='conn')
     _scheduler.add_job(_safe_aggregate,           'interval', hours=1,   id='agg')
+    _scheduler.add_job(_safe_cf_edge_poll,        'interval', hours=1,   id='cf_edge')
     _scheduler.start()

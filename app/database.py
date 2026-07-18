@@ -65,6 +65,14 @@ def init_db():
                 hit_count    INTEGER NOT NULL DEFAULT 0,
                 PRIMARY KEY (hour_ts, service_ip, service_port, protocol)
             );
+            CREATE TABLE IF NOT EXISTS cf_edge_hourly (
+                hour_ts    INTEGER NOT NULL,
+                zone       TEXT    NOT NULL,
+                hostname   TEXT    NOT NULL,
+                requests   INTEGER NOT NULL DEFAULT 0,
+                edge_bytes INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (hour_ts, zone, hostname)
+            );
             CREATE TABLE IF NOT EXISTS dns_cache (
                 ip          TEXT    PRIMARY KEY,
                 hostname    TEXT,
@@ -125,6 +133,7 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_bw_hourly_ts    ON bw_hourly(hour_ts);
             CREATE INDEX IF NOT EXISTS idx_conn_ht_ts      ON conn_hourly(hour_ts);
             CREATE INDEX IF NOT EXISTS idx_cf_tunnel_ts    ON cf_tunnel_hourly(hour_ts);
+            CREATE INDEX IF NOT EXISTS idx_cf_edge_ts      ON cf_edge_hourly(hour_ts);
             CREATE INDEX IF NOT EXISTS idx_fw_devices_ip   ON fw_devices(ip);
             CREATE INDEX IF NOT EXISTS idx_fw_conn_ts      ON fw_conn_hourly(hour_ts);
             CREATE INDEX IF NOT EXISTS idx_fw_conn_src     ON fw_conn_hourly(source_ip);
@@ -244,6 +253,20 @@ def _migrate():
                     error      TEXT    NOT NULL DEFAULT ''
                 );
                 CREATE INDEX IF NOT EXISTS idx_fw_poll_ts ON fw_poll_log(ts);
+            """)
+
+        # v0.13 -> v0.14: add cf_edge_hourly (Cloudflare edge analytics per hostname)
+        if 'cf_edge_hourly' not in tables:
+            conn.executescript("""
+                CREATE TABLE IF NOT EXISTS cf_edge_hourly (
+                    hour_ts    INTEGER NOT NULL,
+                    zone       TEXT    NOT NULL,
+                    hostname   TEXT    NOT NULL,
+                    requests   INTEGER NOT NULL DEFAULT 0,
+                    edge_bytes INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY (hour_ts, zone, hostname)
+                );
+                CREATE INDEX IF NOT EXISTS idx_cf_edge_ts ON cf_edge_hourly(hour_ts);
             """)
 
         cols = {r[1] for r in conn.execute("PRAGMA table_info(conn_hourly)").fetchall()}
@@ -486,6 +509,49 @@ def query_cf_tunnel_hourly(since_hour):
             FROM cf_tunnel_hourly WHERE hour_ts>=?
             GROUP BY hour_ts ORDER BY hour_ts
         """, (since_hour,)).fetchall()
+
+
+# ── CF edge analytics (Cloudflare GraphQL) ────────────────────────────────────
+# Per-hostname request counts + edge bytes, polled hourly from Cloudflare.
+# GraphQL returns authoritative totals per hour, so writes REPLACE (not add).
+
+def upsert_cf_edge(hour_ts: int, zone: str, hostname: str, requests: int, edge_bytes: int):
+    with _db() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO cf_edge_hourly "
+            "(hour_ts, zone, hostname, requests, edge_bytes) VALUES (?,?,?,?,?)",
+            (hour_ts, zone, hostname, requests, edge_bytes)
+        )
+
+
+def query_cf_edge(since_hour: int, limit: int = 100):
+    with _db() as conn:
+        return conn.execute("""
+            SELECT hostname,
+                   SUM(requests)   AS requests,
+                   SUM(edge_bytes) AS edge_bytes
+            FROM cf_edge_hourly WHERE hour_ts>=?
+            GROUP BY hostname ORDER BY edge_bytes DESC LIMIT ?
+        """, (since_hour, limit)).fetchall()
+
+
+def query_cf_edge_hourly(since_hour: int):
+    with _db() as conn:
+        return conn.execute("""
+            SELECT hour_ts,
+                   SUM(requests)   AS requests,
+                   SUM(edge_bytes) AS edge_bytes
+            FROM cf_edge_hourly WHERE hour_ts>=?
+            GROUP BY hour_ts ORDER BY hour_ts
+        """, (since_hour,)).fetchall()
+
+
+def has_cf_edge(since_hour: int) -> bool:
+    with _db() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM cf_edge_hourly WHERE hour_ts>=? LIMIT 1", (since_hour,)
+        ).fetchone()
+        return row is not None
 
 
 # ── device labels ──────────────────────────────────────────────────────────────

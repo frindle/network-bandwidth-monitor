@@ -2,7 +2,7 @@
 
 Docker app for tracking network bandwidth usage and connection destinations over time on all Unraid interfaces.
 
-**Current version:** 0.13.0
+**Current version:** 0.14.0
 
 ## What it does
 
@@ -73,6 +73,18 @@ If you have a Firewalla Gold Plus device, you can enable:
 - **SSH poll health** — Settings shows success rate and latency for the SSH-per-poll connection over the last 24h/7d, to diagnose flaky connections
 
 To enable, open the dashboard → Settings → enter your Firewalla IP and API token.
+
+## Cloudflare edge analytics (optional)
+
+If your tunnel hostnames sit on a domain in your Cloudflare account, the dashboard can also show **edge-side** traffic that local conntrack cannot see: HTTP request counts and bytes served *per public hostname* (including cached/edge-served responses).
+
+This is polled hourly from Cloudflare's GraphQL Analytics API (`httpRequestsAdaptiveGroups`) and stored in `cf_edge_hourly`. It complements the existing conntrack-based CF Tunnel view (which shows bytes forwarded to each *local* service).
+
+To enable, create a Cloudflare API token with **Zone -> Analytics -> Read** permission, then open the dashboard -> Settings -> **Cloudflare Edge Analytics** -> paste the token and your Zone ID (from the domain's Overview page; comma-separate several zones). Use **Test Connection** to verify. Data appears in the **CF Tunnel** view after the first hourly poll.
+
+Notes:
+- Works on the **Free** plan. Cloudflare's own retention for this dataset is short, but the app stores its own hourly history in SQLite, so history accumulates from when you enable it.
+- Rate limits are a non-issue: Cloudflare allows ~300 GraphQL queries per 5 min; this polls once per hour per zone.
 
 ## Notes
 
