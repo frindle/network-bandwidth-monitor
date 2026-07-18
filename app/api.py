@@ -588,9 +588,17 @@ def firewalla_approve():
     import app.firewalla as fw
     body   = request.get_json(force=True) or {}
     mac    = body.get('mac', '')
-    tag_id = db.get_setting('firewalla_trusted_tag_id') or ''
+    tag_id = body.get('tag_id') or db.get_setting('firewalla_trusted_tag_id') or ''
     ok, msg = fw.approve_device(mac, tag_id)
     return jsonify({'ok': ok, 'message': msg})
+
+
+@app.route('/api/firewalla/tags')
+def firewalla_tags():
+    import app.firewalla as fw
+    if not fw.available():
+        return jsonify([])
+    return jsonify(fw.list_tags())
 
 @app.route('/api/fw_devices')
 def fw_devices_list():

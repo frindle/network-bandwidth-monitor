@@ -180,6 +180,57 @@ def list_quarantined_devices() -> list[dict]:
     return result
 
 
+_TAG_SCAN = (
+    "for k in $(redis-cli --scan --pattern 'tag:uid:*'); do "
+    "id=${k#tag:uid:}; "
+    "name=$(redis-cli hget \"$k\" name); "
+    "echo \"${id}|${name}\"; "
+    "done"
+)
+
+
+def _redis_unescape(s: str) -> str:
+    # redis-cli quotes + \xNN-escapes any reply containing non-ASCII bytes
+    # (e.g. a curly apostrophe in "Penn's Devices" comes back as \xe2\x80\x99).
+    s = s.strip()
+    if s.startswith('"') and s.endswith('"'):
+        s = s[1:-1]
+    out = bytearray()
+    i = 0
+    while i < len(s):
+        if s[i] == '\\' and s[i:i + 2] == '\\x' and i + 4 <= len(s):
+            try:
+                out.append(int(s[i + 2:i + 4], 16))
+                i += 4
+                continue
+            except ValueError:
+                pass
+        out.extend(s[i].encode('utf-8'))
+        i += 1
+    try:
+        return out.decode('utf-8')
+    except UnicodeDecodeError:
+        return s
+
+
+def list_tags() -> list[dict]:
+    """All Firewalla device groups (tags), for the approve-device group picker."""
+    try:
+        out = _ssh_run(_TAG_SCAN)
+    except Exception:
+        return []
+    result = []
+    for line in out.splitlines():
+        if '|' not in line:
+            continue
+        tid, name = line.split('|', 1)
+        name = _redis_unescape(name)
+        if name.strip().lower() == 'quarantine':
+            continue  # never offer the quarantine group itself as a target
+        result.append({'id': tid.strip(), 'name': name})
+    return result
+
+
 def approve_device(mac: str, tag_id: str) -> tuple[bool, str]:
     """Move a device out of the default 'new device' group by reassigning
     its tag — this is what the Firewalla app's own approve action does,

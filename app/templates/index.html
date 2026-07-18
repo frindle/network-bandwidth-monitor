@@ -153,9 +153,9 @@
       <span class="test-result" id="fw-test-result" style="display:none"></span>
     </div>
     <div class="field">
-      <label>Trusted Tag ID</label>
+      <label>Default Group (optional)</label>
       <input type="text" id="fw-trusted-tag" placeholder="5" autocomplete="off">
-      <div class="hint">Firewalla group/tag ID to move a device into when you click "Approve" on a quarantined device. Find it by approving one device manually in the Firewalla app, then checking <code>redis-cli hgetall policy:mac:&lt;MAC&gt;</code> on the box for the new "tags" value.</div>
+      <div class="hint">Fallback group/tag ID used only if a quarantined device is approved without picking a group (e.g. via the API directly). The Devices view normally lets you pick the group per-device from a dropdown.</div>
     </div>
     <div class="field">
       <label>SSH Poll Health</label>
@@ -271,12 +271,12 @@
       <thead><tr>
         <th>Device</th>
         <th>MAC</th>
-        <th>Current tag</th>
+        <th>Move to group</th>
         <th></th>
       </tr></thead>
       <tbody id="quar-body"></tbody>
     </table>
-    <div class="hint" style="padding:8px 12px">Approves by reassigning the device's Firewalla tag to the "Trusted tag ID" set in Settings — same effect as approving it in the Firewalla app.</div>
+    <div class="hint" style="padding:8px 12px">Approves by reassigning the device's Firewalla tag to the selected group — same effect as approving it in the Firewalla app.</div>
   </div>
 
   <!-- devices table -->
@@ -631,29 +631,37 @@ async function refreshDevices(){
   refreshQuarantined();
 }
 
+let fwTags=null;
 async function refreshQuarantined(){
   let list=[];
   try{ list=await fetch(`${API}/api/firewalla/quarantined`).then(r=>r.json()); }
   catch(e){console.error('quar',e); return}
   const card=document.getElementById('quar-card');
   if(!list.length){ card.style.display='none'; return }
+  if(fwTags===null){
+    try{ fwTags=await fetch(`${API}/api/firewalla/tags`).then(r=>r.json()); }
+    catch(e){ fwTags=[]; }
+  }
   card.style.display='';
   document.getElementById('quar-cnt').textContent=list.length;
+  const tagOpts=fwTags.map(t=>`<option value="${t.id}">${t.name}</option>`).join('');
   document.getElementById('quar-body').innerHTML=list.map(d=>`
     <tr>
       <td>${d.name||d.vendor||d.ip||'Unknown device'}${d.ip?` <span style="color:var(--muted)">${d.ip}</span>`:''}</td>
       <td style="font-variant-numeric:tabular-nums;color:var(--muted)">${d.mac}</td>
-      <td>${(d.tags||[]).join(', ')||'—'}</td>
+      <td><select class="quar-group">${tagOpts}</select></td>
       <td><button class="btn btn-secondary" onclick="approveQuarantined('${d.mac}',this)">Approve</button></td>
     </tr>`).join('');
 }
 
 async function approveQuarantined(mac,btn){
+  const tagId=btn.closest('tr').querySelector('.quar-group').value;
+  if(!tagId){ alert('No Firewalla groups found — check the Firewalla Integration settings.'); return }
   btn.disabled=true; btn.textContent='…';
   try{
     const res=await fetch(`${API}/api/firewalla/quarantined/approve`,{
       method:'POST', headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({mac})
+      body:JSON.stringify({mac,tag_id:tagId})
     }).then(r=>r.json());
     if(!res.ok) alert('Failed: '+res.message);
   }catch(e){ alert('Failed: '+e); }
