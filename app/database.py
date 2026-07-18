@@ -137,7 +137,6 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_fw_devices_ip   ON fw_devices(ip);
             CREATE INDEX IF NOT EXISTS idx_fw_conn_ts      ON fw_conn_hourly(hour_ts);
             CREATE INDEX IF NOT EXISTS idx_fw_conn_src     ON fw_conn_hourly(source_ip);
-            CREATE INDEX IF NOT EXISTS idx_fw_poll_ts      ON fw_poll_log(ts);
         """)
     _migrate()
     # idx_conn_source requires source_ip which may not exist until after _migrate runs
