@@ -59,8 +59,14 @@ Navigate to `http://10.0.9.47:8080` in your browser.
 | `NET_BASE`              | `/host/net`                | Base path for `/proc/net` files                |
 | `LOCAL_SUBNET`          | `10.0.0.0/20`             | RFC1918 subnet for local/external classification|
 | `IGNORE_INTERFACES`     | (empty)                    | Comma-separated interface names to skip         |
-| `CF_TUNNEL_CONTAINER`   | `CloudflareTunnel`         | Exact Docker container name for cloudflared     |
+| `CF_TUNNEL_IP`          | (empty)                    | Static macvlan IP of the cloudflared container — required for the local CF Tunnel view (or set "CF Tunnel IP" in dashboard Settings instead) |
 | `STARLINK_SSH_KEY`      | `/root/.ssh/id_firewalla`  | SSH key path for Firewalla WAN counter access   |
+
+Note: `CF_TUNNEL_CONTAINER` (container-name matching) was removed in v0.12.0 when Docker
+container tracking was dropped in favor of Firewalla-based device tracking; CF Tunnel
+traffic is now identified by source IP instead. If `CF_TUNNEL_IP` (or the Settings field)
+isn't set, cloudflared's forwarded traffic is silently dropped — it won't appear anywhere,
+not even as a generic destination, because it's local-to-local traffic.
 
 ## Firewalla integration (optional)
 

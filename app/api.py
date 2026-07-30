@@ -368,8 +368,14 @@ def devices():
             'last_seen':   r['last_seen'],
         })
 
-    # Secondary: pull device traffic from fw_conn_hourly when conn_hourly is empty
-    if not rows and firewalla.available() and db.has_fw_connections(since):
+    # Secondary: pull device traffic from fw_conn_hourly for any device conntrack
+    # didn't see. NOTE: this used to be gated on `not rows` ("only when conntrack
+    # has nothing at all"), which meant it never fired in practice — Unraid's own
+    # conntrack table always has at least Unraid's own traffic, so every other LAN
+    # device tracked only via Firewalla was silently dropped. The per-IP `seen_ips`
+    # check below already prevents double-counting, so this just needs to run
+    # whenever Firewalla data exists.
+    if firewalla.available() and db.has_fw_connections(since):
         fw_rows = db.query_fw_connections(since, limit=2000)
         device_traffic = {}
         for r in fw_rows:

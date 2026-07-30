@@ -128,12 +128,22 @@ def get_stats(begin: int, end: int) -> dict:
 
 # ── quarantine / DAP policy ──────────────────────────────────────────────────
 # Firewalla's local API has no endpoint for this — it lives only in the
-# box's own redis. Confirmed by hand (2026-07-18): a device's "quarantine"
-# boolean is a red herring (stays false); the thing that actually isolates a
-# new device is policy:mac:<MAC>.dap.localAclState == "learning". Approving a
-# device in the Firewalla app doesn't touch that dap blob at all — it just
-# reassigns the device's "tags" field to a real group ID. So automation here
-# means writing "tags", not trying to reconstruct the dap JSON.
+# box's own redis. Originally (2026-07-18) this used
+# policy:mac:<MAC>.dap.localAclState == "learning" as the quarantine signal.
+# That was wrong and is why the dashboard showed ~57 "quarantined" devices
+# that weren't actually isolated: "dap" is Firewalla's Dynamic ACL /
+# traffic-learning feature (see firewalla/firewalla test/test_dap_analyze_
+# device.js upstream) — localAclState cycles learning -> optimizing ->
+# not_applicable as part of normal per-device traffic profiling for MOST
+# devices on the network, unrelated to whether a device is actually blocked.
+# Every device mid-profiling read as "quarantined".
+#
+# The real signal is tag membership: Firewalla's built-in "Quarantine" group.
+# approve_device() below already works by reassigning a device's "tags"
+# field away from that group (confirmed by diffing policy:mac:<MAC> before/
+# after an in-app approval), and list_tags() already special-cases excluding
+# the group named "Quarantine" from the picker — so a device is quarantined
+# iff its tags include that group's ID. No dap parsing needed.
 
 def _ssh_run(remote_cmd: str, timeout: int = 15) -> str:
     ip = _ip()
@@ -148,35 +158,53 @@ def _ssh_run(remote_cmd: str, timeout: int = 15) -> str:
     return result.stdout
 
 
-_QUARANTINE_SCAN = (
+_DEVICE_TAGS_SCAN = (
     "for k in $(redis-cli --scan --pattern 'policy:mac:*'); do "
     "mac=${k#policy:mac:}; "
     "tags=$(redis-cli hget \"$k\" tags); "
-    "acl=$(redis-cli hget \"$k\" dap | grep -o '\"localAclState\":\"[a-z]*\"' | head -1 | cut -d'\"' -f4); "
-    "echo \"${mac}|${tags}|${acl}\"; "
+    "echo \"${mac}|${tags}\"; "
     "done"
 )
 
 
-def list_quarantined_devices() -> list[dict]:
-    """Devices still in Firewalla's default DAP 'learning' (isolated) state."""
+def _find_quarantine_tag_id() -> str | None:
+    """Resolve the built-in 'Quarantine' group's tag ID (unlike list_tags(),
+    this does NOT exclude it — it's looking for exactly that one)."""
     try:
-        out = _ssh_run(_QUARANTINE_SCAN)
+        out = _ssh_run(_TAG_SCAN)
+    except Exception:
+        return None
+    for line in out.splitlines():
+        if '|' not in line:
+            continue
+        tid, name = line.split('|', 1)
+        if _redis_unescape(name).strip().lower() == 'quarantine':
+            return tid.strip()
+    return None
+
+
+def list_quarantined_devices() -> list[dict]:
+    """Devices currently in Firewalla's built-in 'Quarantine' tag group."""
+    qid = _find_quarantine_tag_id()
+    if not qid:
+        return []
+    try:
+        out = _ssh_run(_DEVICE_TAGS_SCAN)
     except Exception:
         return []
     result = []
     for line in out.splitlines():
-        parts = line.split('|', 2)
-        if len(parts) != 3:
+        parts = line.split('|', 1)
+        if len(parts) != 2:
             continue
-        mac, tags_raw, acl = parts
-        if acl != 'learning':
-            continue
+        mac, tags_raw = parts
         try:
             tags = json.loads(tags_raw) if tags_raw else []
         except json.JSONDecodeError:
             tags = []
-        result.append({'mac': mac, 'tags': tags, 'acl_state': acl})
+        if qid not in tags:
+            continue
+        result.append({'mac': mac, 'tags': tags})
     return result
 
 
