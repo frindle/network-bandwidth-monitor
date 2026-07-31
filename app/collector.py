@@ -193,8 +193,18 @@ def collect_connections():
     try:
         with open(NET_CONNTRACK) as f:
             lines = f.readlines()
-    except OSError:
+    except OSError as e:
+        print(f'[collector] failed to read {NET_CONNTRACK}: {e}')
         return
+    if not lines:
+        # conn_sample_count/fw_conn stayed at 0 with no visible error —
+        # this is why: the mounted conntrack file itself was empty when
+        # read, so every cycle "succeeds" processing zero lines. Root
+        # cause is host-side (the /proc/1/net:/host/net mount, or
+        # nf_conntrack tracking itself), not something this code can fix
+        # — but it was silent before, so at least log it. Investigating
+        # live 2026-07-31 — remove once resolved.
+        print(f'[collector] {NET_CONNTRACK} read 0 lines this cycle')
 
     new_state  = {}
     conn_deltas = []

@@ -110,12 +110,26 @@ def get_devices() -> list:
 
 
 def get_flows(begin: int, end: int, count: int = 500) -> list:
+    # fw_conn_hourly has sat at 0 samples despite fw_poll_health showing
+    # 100% SSH/JSON success — meaning this call succeeds but the 'flows'/
+    # 'result' key extraction below finds neither, or the whole try block
+    # is failing before ever reaching _ssh_curl's own logging. Logging
+    # both paths so the actual response shape is visible in container
+    # logs on the next 5-min collector cycle instead of silently
+    # vanishing. Investigating live 2026-07-31 — remove once resolved.
     try:
         data = _ssh_curl(f'/v1/flow?begin={begin}&end={end}&count={count}', timeout=15)
         if isinstance(data, dict):
-            return data.get('flows', data.get('result', []))
+            flows = data.get('flows', data.get('result', []))
+            if not flows:
+                print(f'[fw_flows] /v1/flow returned a dict with no flows/result key. '
+                      f'Keys present: {list(data.keys())}')
+            return flows
+        if not data:
+            print(f'[fw_flows] /v1/flow returned falsy non-dict: {data!r}')
         return data or []
-    except Exception:
+    except Exception as e:
+        print(f'[fw_flows] get_flows failed: {type(e).__name__}: {e}')
         return []
 
 
