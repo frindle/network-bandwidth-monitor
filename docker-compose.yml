@@ -2,6 +2,8 @@ services:
   netmon:
     build: .
     container_name: netmon
+    labels:
+      net.unraid.docker.icon: "https://raw.githubusercontent.com/frindle/network-bandwidth-monitor/main/icon.png"
     restart: unless-stopped
     cap_add:
       - NET_ADMIN
