@@ -70,7 +70,53 @@ def wan_series_emitted():
 
 def poll_health_emitted():
     out = R({}, {}, {'success_rate': 99.5, 'avg_latency_ms': 12.0, 'failures': 1})
-    return 'netmon_fw_poll' in out and 'success_rate=99.5' in out
+    return ('netmon_fw_poll' in out and 'success_rate=99.5' in out
+            and 'avg_latency_ms=12.0' in out and 'failures=1i' in out)
+
+
+def missing_rate_keys_default_zero():
+    # a rate dict missing 'tx' (or 'rx') must default that field to 0.0, not
+    # some other constant, and must not raise
+    out_tx = R({'eth0': {'rx': 5.0}}, {}, None)
+    out_rx = R({'eth0': {'tx': 7.0}}, {}, None)
+    return ('tx_rate=0.0' in out_tx and 'rx_rate=5.0' in out_tx
+            and 'rx_rate=0.0' in out_rx and 'tx_rate=7.0' in out_rx)
+
+
+def route_emits_line_protocol():
+    # exercise the Flask Blueprint route end-to-end with stubbed netmon deps,
+    # so the route handler (lazy imports + gather + Response) is covered without
+    # the real collector/database (which need Python 3.10+ to import).
+    import sys as _sys
+    import types as _types
+    fake_app = _types.ModuleType('app')
+    fake_app.__path__ = []
+    fake_collector = _types.ModuleType('app.collector')
+    fake_collector.current_rates = lambda: {'eth0': {'rx': 3.0, 'tx': 4.0}}
+    fake_db = _types.ModuleType('app.database')
+    fake_db.query_fw_poll_summary = lambda since: {
+        'success_rate': 50.0, 'avg_latency_ms': 5.0, 'failures': 2}
+    saved = {k: _sys.modules.get(k) for k in ('app', 'app.collector', 'app.database')}
+    _sys.modules['app'] = fake_app
+    _sys.modules['app.collector'] = fake_collector
+    _sys.modules['app.database'] = fake_db
+    try:
+        from flask import Flask
+        flask_app = Flask('t')
+        flask_app.register_blueprint(target.bp)
+        client = flask_app.test_client()
+        resp = client.get('/api/metrics')
+        body = resp.get_data(as_text=True)
+        ok = (resp.status_code == 200
+              and 'text/plain' in resp.headers.get('Content-Type', '')
+              and 'netmon_interface,iface=eth0 rx_rate=3.0,tx_rate=4.0' in body)
+    finally:
+        for k, v in saved.items():
+            if v is None:
+                _sys.modules.pop(k, None)
+            else:
+                _sys.modules[k] = v
+    return ok
 
 
 def one_unescaped_separator_per_line():
@@ -92,8 +138,10 @@ CASES = [
     ("every measurement is namespaced netmon_*", all_measurements_namespaced, True),
     ("numeric fields are unquoted (real floats, not strings)", numeric_fields_unquoted, True),
     ("WAN series is emitted as netmon_wan", wan_series_emitted, True),
-    ("poll-health series is emitted as netmon_fw_poll", poll_health_emitted, True),
+    ("poll-health series carries all fields (success_rate/avg_latency/failures)", poll_health_emitted, True),
+    ("missing rate keys default to 0.0", missing_rate_keys_default_zero, True),
     ("exactly one unescaped tag/field separator per line", one_unescaped_separator_per_line, True),
+    ("GET /api/metrics route emits line protocol (text/plain)", route_emits_line_protocol, True),
 ]
 
 
