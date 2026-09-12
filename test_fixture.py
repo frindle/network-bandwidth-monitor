@@ -83,19 +83,27 @@ def missing_rate_keys_default_zero():
             and 'rx_rate=0.0' in out_rx and 'tx_rate=7.0' in out_rx)
 
 
-def route_emits_line_protocol():
-    # exercise the Flask Blueprint route end-to-end with stubbed netmon deps,
-    # so the route handler (lazy imports + gather + Response) is covered without
-    # the real collector/database (which need Python 3.10+ to import).
+import time as _time
+import types as _types
+
+
+def _drive_route(current_rates, poll_result, raise_poll=False):
+    """Register target.bp on a throwaway Flask app with stubbed netmon deps and
+    GET /api/metrics. Returns (resp, body, captured_since)."""
     import sys as _sys
-    import types as _types
-    fake_app = _types.ModuleType('app')
-    fake_app.__path__ = []
+    captured = {}
+    fake_app = _types.ModuleType('app'); fake_app.__path__ = []
     fake_collector = _types.ModuleType('app.collector')
-    fake_collector.current_rates = lambda: {'eth0': {'rx': 3.0, 'tx': 4.0}}
+    fake_collector.current_rates = lambda: current_rates
     fake_db = _types.ModuleType('app.database')
-    fake_db.query_fw_poll_summary = lambda since: {
-        'success_rate': 50.0, 'avg_latency_ms': 5.0, 'failures': 2}
+
+    def _q(since):
+        captured['since'] = since
+        if raise_poll:
+            raise RuntimeError('boom')
+        return poll_result
+    fake_db.query_fw_poll_summary = _q
+
     saved = {k: _sys.modules.get(k) for k in ('app', 'app.collector', 'app.database')}
     _sys.modules['app'] = fake_app
     _sys.modules['app.collector'] = fake_collector
@@ -104,19 +112,50 @@ def route_emits_line_protocol():
         from flask import Flask
         flask_app = Flask('t')
         flask_app.register_blueprint(target.bp)
-        client = flask_app.test_client()
-        resp = client.get('/api/metrics')
-        body = resp.get_data(as_text=True)
-        ok = (resp.status_code == 200
-              and 'text/plain' in resp.headers.get('Content-Type', '')
-              and 'netmon_interface,iface=eth0 rx_rate=3.0,tx_rate=4.0' in body)
+        resp = flask_app.test_client().get('/api/metrics')
+        return resp, resp.get_data(as_text=True), captured.get('since')
     finally:
         for k, v in saved.items():
             if v is None:
                 _sys.modules.pop(k, None)
             else:
                 _sys.modules[k] = v
-    return ok
+
+
+def route_emits_line_protocol():
+    resp, body, since = _drive_route(
+        {'eth0': {'rx': 3.0, 'tx': 4.0}},
+        {'success_rate': 50.0, 'avg_latency_ms': 5.0, 'failures': 2})
+    # exact mimetype (substring 'text/plain' would pass a 'text/plain_X' mutant)
+    return (resp.status_code == 200 and resp.mimetype == 'text/plain'
+            and 'netmon_interface,iface=eth0 rx_rate=3.0,tx_rate=4.0' in body
+            and 'netmon_fw_poll' in body)
+
+
+def route_polls_last_24h():
+    # the route must query the poll summary for the last 24h (now - 86400),
+    # not now + 86400. Kills the '- -> +' mutant on the window.
+    before = int(_time.time())
+    _resp, _body, since = _drive_route({}, {'success_rate': 1.0, 'avg_latency_ms': 1.0, 'failures': 0})
+    after = int(_time.time())
+    return since is not None and (before - 86400 - 2) <= since <= (after - 86400 + 2)
+
+
+def route_survives_poll_error():
+    # when the poll query raises, the route must still return 200 with the
+    # interface data and simply omit the poll line. Kills 'delete poll = {}'.
+    resp, body, _since = _drive_route({'eth0': {'rx': 1.0, 'tx': 2.0}}, None, raise_poll=True)
+    return (resp.status_code == 200
+            and 'netmon_interface,iface=eth0' in body
+            and 'netmon_fw_poll' not in body)
+
+
+def poll_partial_defaults_zero():
+    # a poll dict missing success_rate/avg_latency must default them to 0.0
+    # (kills the '0.0 -> 1.0' mutant on the fallbacks).
+    out = R({}, {}, {'failures': 3})
+    return ('success_rate=0.0' in out and 'avg_latency_ms=0.0' in out
+            and 'failures=3i' in out)
 
 
 def one_unescaped_separator_per_line():
@@ -141,7 +180,10 @@ CASES = [
     ("poll-health series carries all fields (success_rate/avg_latency/failures)", poll_health_emitted, True),
     ("missing rate keys default to 0.0", missing_rate_keys_default_zero, True),
     ("exactly one unescaped tag/field separator per line", one_unescaped_separator_per_line, True),
-    ("GET /api/metrics route emits line protocol (text/plain)", route_emits_line_protocol, True),
+    ("poll dict missing fields defaults them to 0.0", poll_partial_defaults_zero, True),
+    ("GET /api/metrics route emits line protocol (exact text/plain)", route_emits_line_protocol, True),
+    ("route queries poll summary for the last 24h (now-86400)", route_polls_last_24h, True),
+    ("route survives a poll-query error (200, no poll line)", route_survives_poll_error, True),
 ]
 
 
