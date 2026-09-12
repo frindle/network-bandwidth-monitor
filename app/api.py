@@ -19,6 +19,10 @@ VERSION = '0.14.0'
 
 app = Flask(__name__)
 
+# Telegraf metrics exporter (line-protocol at /api/metrics) for the shared TIG stack
+from app.metrics import bp as _metrics_bp
+app.register_blueprint(_metrics_bp)
+
 _RANGES = {
     '1h':  3600,        '6h':  21600,
     '24h': 86400,       '7d':  7  * 86400,
