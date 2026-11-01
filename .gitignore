@@ -13,3 +13,5 @@ venv/
 memory/
 *.jsonl
 .DS_Store
+graphify-out/
+*.log
