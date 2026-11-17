@@ -183,7 +183,7 @@
     <div class="field">
       <label>API Token</label>
       <input type="password" id="cf-token" placeholder="Cloudflare API token" autocomplete="off">
-      <div class="hint">Token with <b>Zone → Analytics → Read</b>. Polls per-hostname request counts &amp; edge bytes hourly via the GraphQL API.</div>
+      <div class="hint">Write-only: a saved token is never shown again; leave blank to keep it. Token with <b>Zone → Analytics → Read</b>. Polls per-hostname request counts &amp; edge bytes hourly via the GraphQL API.</div>
     </div>
     <div class="field">
       <label>Zone ID(s)</label>
@@ -890,7 +890,9 @@ async function openSettings(){
   document.getElementById('fw-trusted-tag').value= data.firewalla_trusted_tag_id||'';
   document.getElementById('s-subnet').value      = data.local_subnet||'';
   document.getElementById('s-cf-container').value= data.cf_tunnel_ip||'';
-  document.getElementById('cf-token').value      = data.cf_api_token||'';
+  const cfTok=document.getElementById('cf-token');
+  cfTok.value='';   // the server never sends the saved token back
+  cfTok.placeholder=data.cf_api_token_set?'Saved (leave blank to keep)':'Cloudflare API token';
   document.getElementById('cf-zone').value       = data.cf_zone_id||'';
   document.getElementById('cf-test-result').style.display='none';
   document.getElementById('fw-test-result').style.display='none';

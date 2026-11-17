@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.14.1] - 2026-11-16
+
+### Security
+- **The Cloudflare API token is now write-only.** `GET /api/settings` used to return it in plain text to anyone on the LAN. It now returns `cf_api_token_set: true/false` instead, and the Settings form shows "Saved (leave blank to keep)". Saving with the field blank keeps the stored token; send `cf_api_token_clear: true` to remove it.
+
 ## [0.14.0] - 2026-07-18
 
 ### Added

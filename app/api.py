@@ -9,13 +9,14 @@ import app.cloudflare as cloudflare
 import app.cloudflare_api as cloudflare_api
 import app.collector as collector
 import app.database as db
+import app.settings_secrets as settings_secrets
 import app.fw_collector as fw_collector
 import app.fw_flows_collector as fw_flows_collector
 import app.firewalla as firewalla
 import app.resolver as resolver
 import app.starlink_collector as starlink_collector
 
-VERSION = '0.14.0'
+VERSION = '0.14.1'
 
 app = Flask(__name__)
 
@@ -538,15 +539,13 @@ _SETTING_KEYS = ['firewalla_ip', 'firewalla_ssh_ip', 'local_subnet', 'cf_tunnel_
 @app.route('/api/settings', methods=['GET'])
 def get_settings():
     vals = db.get_all_settings(_SETTING_KEYS)
-    return jsonify(vals)
+    return jsonify(settings_secrets.public_view(vals))
 
 @app.route('/api/settings', methods=['POST'])
 def save_settings():
-    body = request.get_json(force=True)
-    for key in _SETTING_KEYS:
-        if key in body:
-            val = body[key].strip() if body[key] else None
-            db.set_setting(key, val)
+    body = request.get_json(force=True) or {}
+    for key, val in settings_secrets.updates(body, _SETTING_KEYS).items():
+        db.set_setting(key, val)
     return jsonify({'ok': True})
 
 @app.route('/api/settings/fw_test')
