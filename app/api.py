@@ -16,7 +16,7 @@ import app.firewalla as firewalla
 import app.resolver as resolver
 import app.starlink_collector as starlink_collector
 
-VERSION = '0.14.1'
+VERSION = '0.14.2'
 
 app = Flask(__name__)
 

@@ -109,21 +109,35 @@ def get_devices() -> list:
         return []
 
 
+# /v1/flow has answered {message, error} on every 5-min poll since at least July, so fw_conn_hourly stays
+# empty. Log the box's own error text so the cause is visible, but only once an hour instead of every poll.
+_FLOW_PROBLEM_EVERY_S = 3600
+_flow_problem_logged_at = 0.0
+
+
+def _log_flow_problem(data: dict, now: float = None) -> bool:
+    """Print why /v1/flow gave no flows, at most once per _FLOW_PROBLEM_EVERY_S. True when a line was printed."""
+    global _flow_problem_logged_at
+    now = time.time() if now is None else now
+    if now - _flow_problem_logged_at < _FLOW_PROBLEM_EVERY_S:
+        return False
+    _flow_problem_logged_at = now
+    if 'message' in data or 'error' in data:
+        text = ' | '.join(f'{k}={str(data.get(k))[:200]}' for k in ('message', 'error') if k in data)
+        print(f'[fw_flows] /v1/flow returned an error (logged once an hour): {text}')
+    else:
+        print(f'[fw_flows] /v1/flow returned a dict with no flows/result key (logged once an hour). '
+              f'Keys present: {list(data.keys())}')
+    return True
+
+
 def get_flows(begin: int, end: int, count: int = 500) -> list:
-    # fw_conn_hourly has sat at 0 samples despite fw_poll_health showing
-    # 100% SSH/JSON success — meaning this call succeeds but the 'flows'/
-    # 'result' key extraction below finds neither, or the whole try block
-    # is failing before ever reaching _ssh_curl's own logging. Logging
-    # both paths so the actual response shape is visible in container
-    # logs on the next 5-min collector cycle instead of silently
-    # vanishing. Investigating live 2026-07-31 — remove once resolved.
     try:
         data = _ssh_curl(f'/v1/flow?begin={begin}&end={end}&count={count}', timeout=15)
         if isinstance(data, dict):
             flows = data.get('flows', data.get('result', []))
-            if not flows:
-                print(f'[fw_flows] /v1/flow returned a dict with no flows/result key. '
-                      f'Keys present: {list(data.keys())}')
+            if not flows and 'flows' not in data and 'result' not in data:
+                _log_flow_problem(data)
             return flows
         if not data:
             print(f'[fw_flows] /v1/flow returned falsy non-dict: {data!r}')

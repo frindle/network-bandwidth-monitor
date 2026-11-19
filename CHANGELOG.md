@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.14.2] - 2026-11-19
+
+### Fixed
+- **Flow collector logs the firewall's own error text, once an hour.** `/v1/flow` has answered `{message, error}` on every 5-minute poll, so flow tables stay empty, and the log printed only the key names about 300 times a day. It now prints the message and error (each cut to 200 characters) at most once an hour, and an empty `flows` list is no longer reported as a problem.
+
 ## [0.14.1] - 2026-11-16
 
 ### Security
