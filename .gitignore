@@ -15,3 +15,6 @@ memory/
 .DS_Store
 graphify-out/
 *.log
+
+# update.sh: commit the image was last built from
+.last-built-sha
